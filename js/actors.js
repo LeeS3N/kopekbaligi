@@ -235,12 +235,13 @@ const SHARK_MARKS = `
     smoothstep(0.66, 0.76, vLift) * (1.0 - smoothstep(0.86, 0.95, vLift)) * smoothstep(0.28, 0.48, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong))
   ), smoothstep(0.58, 0.72, vSide) * (1.0 - smoothstep(0.80, 0.92, vSide)) * (1.0 - smoothstep(0.58, 0.84, vLift)) * smoothstep(0.18, 0.38, vAlong) * (1.0 - smoothstep(0.52, 0.76, vAlong))), 0.0, 1.0);
   if (uMark > 0.5) {
-    float dTipW = smoothstep(0.70, 0.88, vLift) * smoothstep(0.26, 0.50, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong));
-    float tailW = smoothstep(0.76, 0.92, vAlong) * smoothstep(0.12, 0.55, max(vLift, vSide));
-    float tipF = clamp(max(tip, max(dTipW, tailW)), 0.0, 1.0);
-    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.18, 0.16, 0.13), collar * 0.85);
-    outgoingLight = mix(outgoingLight, vec3(0.98, 0.99, 0.96), tipF * 0.99);
-    outgoingLight += vec3(0.22, 0.22, 0.2) * tipF * 0.45;
+    float dTipW = smoothstep(0.64, 0.86, vLift) * smoothstep(0.24, 0.52, vAlong) * (1.0 - smoothstep(0.60, 0.84, vAlong));
+    float tailW = smoothstep(0.70, 0.90, vAlong) * smoothstep(0.10, 0.58, max(vLift, vSide));
+    float pecW = smoothstep(0.62, 0.84, vSide) * (1.0 - smoothstep(0.55, 0.82, vLift)) * smoothstep(0.16, 0.40, vAlong);
+    float tipF = clamp(max(tip, max(dTipW, max(tailW, pecW))), 0.0, 1.0);
+    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.16, 0.14, 0.11), collar * 0.9);
+    outgoingLight = mix(outgoingLight, vec3(0.99, 0.99, 0.97), tipF * 1.0);
+    outgoingLight += vec3(0.28, 0.28, 0.26) * tipF * 0.7;
   } else {
     outgoingLight = mix(outgoingLight, vec3(0.01, 0.01, 0.012), tip * 0.97);
   }
@@ -725,7 +726,7 @@ function makePlateCoral(size, uniforms) {
   ensureProjectedUv(geo);
   const mat = new THREE.MeshStandardMaterial({
     map: coralSurfaceTex("plate"),
-    color: 0xa87848,
+    color: 0x9a6a38,
     roughness: 0.9,
     metalness: 0,
     envMapIntensity: 0.28,
@@ -767,10 +768,10 @@ function styleCoralMaterial(m, name, opts, quality) {
     staghorn: 0xb07a52,
     elkhorn: 0xb89860,
     pillar: 0xb07a48,
-    finger: 0x9a5e38,
+    finger: 0x8a6240,
     seafan: 0xa85a42,
     softbush: 0x8a6a38,
-    carnation: 0xa84830,
+    carnation: 0x8a5030,
     barrel_sponge: 0xa85a28,
     vase_sponge: 0xb86838,
     anemone: 0xd4a078,
@@ -781,7 +782,7 @@ function styleCoralMaterial(m, name, opts, quality) {
   };
   if (opts && opts.tint) m.color?.multiply(new THREE.Color(opts.tint));
   else if (NATURAL[name]) m.color?.set(NATURAL[name]);
-  if (matName.includes("pink")) m.color?.set(0xa85a48);
+  if (matName.includes("pink")) m.color?.set(0x8a5a38);
   if (m.roughness !== undefined) m.roughness = Math.min(Math.max(m.roughness ?? 0.62, 0.45), 0.8);
   m.envMapIntensity = 0.5;
 }
@@ -1099,7 +1100,7 @@ function styleReefFish(root, uniforms, key) {
       o.geometry.computeBoundingBox();
       const c = o.geometry.boundingBox.getCenter(new THREE.Vector3());
       o.geometry.translate(-c.x, -c.y, -c.z);
-      o.geometry.scale(0.68, 0.68, 0.68);
+      o.geometry.scale(0.58, 0.58, 0.58);
       o.geometry.translate(c.x, c.y, c.z);
       o.geometry.computeVertexNormals();
     }
