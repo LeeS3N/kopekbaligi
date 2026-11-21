@@ -485,13 +485,13 @@ function styleCoralMaterial(m, name, opts, quality) {
   const NATURAL = {
     brain: 0xc47a48,
     mushroom: 0xb06a4a,
-    table: 0xd8b07a,
-    lettuce: 0x6a8a3a,
-    bubble: 0xd4a048,
-    staghorn: 0xc49668,
-    elkhorn: 0xd0ae80,
-    pillar: 0xc48a58,
-    finger: 0xb87a50,
+    table: 0xa87848,
+    lettuce: 0x5a7a32,
+    bubble: 0xc48a38,
+    staghorn: 0xb07a52,
+    elkhorn: 0xb89860,
+    pillar: 0xb07a48,
+    finger: 0xa86a42,
     seafan: 0xa85a42,
     softbush: 0x8a6a38,
     carnation: 0xc25038,
@@ -583,16 +583,16 @@ export function createReefScenery(quality, uniforms) {
     ["pillar", 0.7, -1.7, -0.6, 0.0],
     ["finger", 0.4, 0.85, -0.58, 0.7],
     ["seafan", 0.55, -1.15, -0.62, 0.9, { sway: true }],
-    ["seafan", 0.42, 1.25, -0.6, -0.8, { sway: true, tint: 0xc07050 }],
+    ["seafan", 0.42, 1.25, -0.6, -0.8, { sway: true, tint: 0xa85838 }],
     ["softbush", 0.38, -0.2, -0.58, 0.4, { sway: true }],
     ["carnation", 0.32, 0.35, -0.48, 1.4, { sway: true }],
-    ["barrel_sponge", 0.32, -0.7, 0.48, 0.3, { tint: 0xc45a2a }],
-    ["vase_sponge", 0.26, 0.95, 0.42, 0.8, { tint: 0xd07040 }],
+    ["barrel_sponge", 0.32, -0.7, 0.48, 0.3, { tint: 0xb04a22 }],
+    ["vase_sponge", 0.26, 0.95, 0.42, 0.8, { tint: 0xa85028 }],
     ["clam", 0.28, -0.15, 0.5, 0.4],
     ["starfish", 0.16, 0.55, 0.52, 0.2],
     ["featherduster", 0.28, -1.05, 0.38, 0.6, { sway: true }],
     ["anemone", 0.42, -1.25, 0.22, 0.3, { sway: true }],
-    ["anemone", 0.34, 1.35, 0.28, -0.5, { sway: true, tint: 0xe8c4a0 }],
+    ["anemone", 0.34, 1.35, 0.28, -0.5, { sway: true, tint: 0xc49868 }],
     ["anemone_carpet", 0.5, -0.55, -0.4, 0.8, { sway: true }],
   ];
   for (const item of layout) {
@@ -651,13 +651,13 @@ export function createKelp(quality, uniforms) {
   const group = new THREE.Group();
   const n = quality.kelp;
   const rng = mulberry(11);
-  if (CACHE.coral.kelp && !quality.software) { // real kelp on GPU
-    const count = n;
+  if (CACHE.coral.kelp) {
+    const count = quality.software ? Math.min(n, 6) : n;
     for (let i = 0; i < count; i++) {
       const side = i % 2 === 0 ? -1 : 1;
       const x = side * (1.55 + rng() * 0.55);
       const z = -TANK.d / 2 + 0.22 + rng() * (TANK.d * 0.4);
-      const mesh = cloneCoral("kelp", 0.85 + rng() * 0.55, uniforms, { sway: true, phase: rng() * 6.28, tint: 0xb8d060 });
+      const mesh = cloneCoral("kelp", 0.85 + rng() * 0.55, uniforms, { sway: true, phase: rng() * 6.28, tint: 0x6a8a34 });
       place(group, mesh, x, z, rng() * Math.PI * 2);
     }
   } else {
@@ -689,12 +689,12 @@ export function createKelp(quality, uniforms) {
       group.add(mesh);
     }
   }
-  if (CACHE.coral.seagrass && !quality.software) {
-    const count = quality.mobile ? 4 : 8;
+  if (CACHE.coral.seagrass) {
+    const count = quality.software ? 5 : (quality.mobile ? 4 : 8);
     for (let i = 0; i < count; i++) {
       const x = (rng() - 0.5) * 3.6;
       const z = -TANK.d / 2 + 0.2 + rng() * 0.45;
-      const mesh = cloneCoral("seagrass", 0.28 + rng() * 0.18, uniforms, { sway: true, phase: rng() * 6.28, tint: 0x88c050 });
+      const mesh = cloneCoral("seagrass", 0.28 + rng() * 0.18, uniforms, { sway: true, phase: rng() * 6.28, tint: 0x5a8a38 });
       place(group, mesh, x, z, rng() * 6.28);
     }
   }

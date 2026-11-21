@@ -362,9 +362,9 @@ export async function createWorld(canvas, quality, manager) {
 
   const load = texLoader(manager);
   const tex = {
-    sandDiff: load(quality.tex1k ? "./textures/coast_sand_01_diff_1k.jpg" : "./textures/coast_sand_01_diff_2k.jpg", true, 5.0),
-    sandNor: load(quality.tex1k ? "./textures/coast_sand_01_nor_gl_1k.jpg" : "./textures/coast_sand_01_nor_gl_2k.jpg", false, 5.0),
-    sandRough: load("./textures/coast_sand_01_rough_1k.jpg", false, 5.0),
+    sandDiff: load(quality.tex1k ? "./textures/coast_sand_01_diff_1k.jpg" : "./textures/coast_sand_01_diff_2k.jpg", true, 6.5),
+    sandNor: load(quality.tex1k ? "./textures/coast_sand_01_nor_gl_1k.jpg" : "./textures/coast_sand_01_nor_gl_2k.jpg", false, 6.5),
+    sandRough: load("./textures/coast_sand_01_rough_1k.jpg", false, 6.5),
     rockDiff: load("./textures/rock_face_03_diff_1k.jpg", true, 1.4),
     rockNor: load("./textures/rock_face_03_nor_gl_1k.jpg", false, 1.4),
     rockRough: load("./textures/rock_face_03_rough_1k.jpg", false, 1.4),
@@ -395,7 +395,7 @@ export async function createWorld(canvas, quality, manager) {
   root.add(cabinet);
 
   const sand = makeSand(tex, quality);
-  applyUnderwater(sand.material, uniforms);
+  applyUnderwater(sand.material, uniforms, { key: "sand", uniforms: { uCauGain: { value: 1.85 } } });
   root.add(sand);
 
   const interior = new THREE.Group();
@@ -948,20 +948,50 @@ function makeFrontGlassFresnel() {
 
 function makeFrames() {
   const g = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x3a2a18, roughness: 0.45, metalness: 0.1 });
-  const arts = [0x1a3040, 0x4a2018, 0x2a3a28];
-  const xs = [-2.4, 0.0, 2.4];
-  arts.forEach((col, i) => {
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.52, 0.03), wood);
-    frame.position.set(xs[i], 1.55, ROOM.minZ + 0.02);
-    g.add(frame);
-    const art = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.62, 0.42),
-      new THREE.MeshStandardMaterial({ color: col, roughness: 0.7, emissive: col, emissiveIntensity: 0.04 })
-    );
-    art.position.set(xs[i], 1.55, ROOM.minZ + 0.04);
-    g.add(art);
-  });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x3a2a16, roughness: 0.4, metalness: 0.15 });
+  // painted seascape, large enough to read in the gap left of the tank
+  const c = document.createElement("canvas");
+  c.width = 640; c.height = 480;
+  const ctx = c.getContext("2d");
+  const grd = ctx.createLinearGradient(0, 0, 0, 480);
+  grd.addColorStop(0, "#1a3048");
+  grd.addColorStop(0.4, "#2a6870");
+  grd.addColorStop(0.62, "#d4a060");
+  grd.addColorStop(1, "#3a2014");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 640, 480);
+  ctx.fillStyle = "rgba(255,220,160,0.28)";
+  ctx.beginPath(); ctx.arc(470, 110, 78, 0, 6.28); ctx.fill();
+  ctx.fillStyle = "#1a2820";
+  ctx.beginPath();
+  ctx.moveTo(0, 300); ctx.lineTo(160, 250); ctx.lineTo(300, 310); ctx.lineTo(480, 240); ctx.lineTo(640, 300); ctx.lineTo(640, 480); ctx.lineTo(0, 480);
+  ctx.fill();
+  ctx.fillStyle = "#0e1814";
+  ctx.beginPath();
+  ctx.moveTo(0, 340); ctx.lineTo(200, 300); ctx.lineTo(340, 360); ctx.lineTo(640, 320); ctx.lineTo(640, 480); ctx.lineTo(0, 480);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.88, 0.045), wood);
+  frame.position.set(-3.25, 1.38, ROOM.minZ + 0.03);
+  frame.castShadow = true;
+  g.add(frame);
+  const art = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.02, 0.74),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.62, emissive: new THREE.Color(0x3a2a18), emissiveIntensity: 0.12 })
+  );
+  art.position.set(-3.25, 1.38, ROOM.minZ + 0.055);
+  g.add(art);
+  // smaller companion on the right back wall (mostly out of the wide shot)
+  const frame2 = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.54, 0.03), wood);
+  frame2.position.set(3.2, 1.5, ROOM.minZ + 0.03);
+  g.add(frame2);
+  const art2 = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.6, 0.44),
+    new THREE.MeshStandardMaterial({ color: 0x4a2018, roughness: 0.7, emissive: new THREE.Color(0x2a100c), emissiveIntensity: 0.08 })
+  );
+  art2.position.set(3.2, 1.5, ROOM.minZ + 0.05);
+  g.add(art2);
   return g;
 }
 
@@ -1035,10 +1065,11 @@ function makeSand(tex, quality) {
     map: tex.sandDiff,
     normalMap: tex.sandNor,
     roughnessMap: tex.sandRough,
-    color: 0xd4bc8a,
+    color: 0xc4a872,
     roughness: 0.88,
     metalness: 0.0,
     envMapIntensity: 0.25,
+    normalScale: new THREE.Vector2(1.35, 1.35),
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
