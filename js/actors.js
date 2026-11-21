@@ -181,16 +181,16 @@ function upgradeSharkMaterial(src, gender) {
     p.emissiveIntensity = 0.12;
     p.userData.role = "eye";
   } else if (isCream) {
-    p.color.set(gender === "f" ? 0xb89a7e : 0x9ea094);
+    p.color.set(gender === "f" ? 0xa88870 : 0x8a8e86);
     p.roughness = 0.55;
     p.metalness = 0.03;
     p.envMapIntensity = 0.32;
     p.userData.role = "belly";
   } else {
-    p.color.set(gender === "f" ? 0x4a382c : 0x2a2e2c);
+    p.color.set(gender === "f" ? 0x3a2c22 : 0x1c201e);
     p.roughness = 0.34;
     p.metalness = 0.12;
-    p.envMapIntensity = 0.7;
+    p.envMapIntensity = 0.45;
     p.emissive = new THREE.Color(gender === "f" ? 0x140e08 : 0x080c0e);
     p.emissiveIntensity = 0.025;
     p.userData.role = "body";
@@ -235,18 +235,22 @@ const SHARK_MARKS = `
     smoothstep(0.66, 0.76, vLift) * (1.0 - smoothstep(0.86, 0.95, vLift)) * smoothstep(0.28, 0.48, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong))
   ), smoothstep(0.58, 0.72, vSide) * (1.0 - smoothstep(0.80, 0.92, vSide)) * (1.0 - smoothstep(0.58, 0.84, vLift)) * smoothstep(0.18, 0.38, vAlong) * (1.0 - smoothstep(0.52, 0.76, vAlong))), 0.0, 1.0);
   if (uMark > 0.5) {
-    float dTipW = smoothstep(0.64, 0.86, vLift) * smoothstep(0.24, 0.52, vAlong) * (1.0 - smoothstep(0.60, 0.84, vAlong));
-    float tailW = smoothstep(0.70, 0.90, vAlong) * smoothstep(0.10, 0.58, max(vLift, vSide));
-    float pecW = smoothstep(0.62, 0.84, vSide) * (1.0 - smoothstep(0.55, 0.82, vLift)) * smoothstep(0.16, 0.40, vAlong);
+    float dTipW = smoothstep(0.70, 0.88, vLift) * smoothstep(0.26, 0.50, vAlong) * (1.0 - smoothstep(0.58, 0.82, vAlong));
+    float tailW = smoothstep(0.78, 0.92, vAlong) * smoothstep(0.14, 0.58, max(vLift, vSide));
+    float pecW = smoothstep(0.70, 0.90, vSide) * (1.0 - smoothstep(0.58, 0.84, vLift)) * smoothstep(0.16, 0.40, vAlong);
     float tipF = clamp(max(tip, max(dTipW, max(tailW, pecW))), 0.0, 1.0);
     outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.16, 0.14, 0.11), collar * 0.9);
-    outgoingLight = mix(outgoingLight, vec3(0.99, 0.99, 0.97), tipF * 1.0);
-    outgoingLight += vec3(0.28, 0.28, 0.26) * tipF * 0.7;
+    outgoingLight = mix(outgoingLight, vec3(1.05, 1.04, 1.00), tipF);
+    outgoingLight += vec3(0.40, 0.40, 0.38) * tipF * 0.85;
   } else {
-    outgoingLight = mix(outgoingLight, vec3(0.01, 0.01, 0.012), tip * 0.97);
+    outgoingLight = mix(outgoingLight, vec3(0.01, 0.01, 0.012), tip * 0.98);
+    outgoingLight *= mix(vec3(1.0), vec3(0.20, 0.20, 0.22), tip * 0.8);
   }
-  float shine = pow(clamp(dot(normalize(normal), vec3(0.15, 0.75, 0.64)), 0.0, 1.0), 32.0);
-  outgoingLight += vec3(0.50, 0.58, 0.62) * shine * 0.22;
+  float shine = pow(clamp(dot(normalize(normal), vec3(0.15, 0.75, 0.64)), 0.0, 1.0), 36.0);
+  outgoingLight += vec3(0.42, 0.50, 0.54) * shine * 0.14;
+  float ndv = max(0.0, dot(normalize(normal), normalize(-vViewPosition)));
+  float rim = pow(clamp(1.0 - ndv, 0.0, 1.0), 3.1);
+  outgoingLight += vec3(0.55, 0.75, 0.90) * rim * 0.28;
 `;
 
 export function createSharkActor(spec, gltf, uniforms, length) {
@@ -281,7 +285,7 @@ export function createSharkActor(spec, gltf, uniforms, length) {
               uPhase: swimU.uPhase,
               uBite: swimU.uBite,
               uMark: { value: spec.gender === "f" ? 1 : 0 },
-              uCauGain: { value: 0.26 },
+              uCauGain: { value: 0.14 },
             },
             vertexCommon: "attribute float aAlong; attribute float aLift; attribute float aSide; varying float vAlong; varying float vLift; varying float vSide; uniform float uAmp; uniform float uPhase; uniform float uTime; uniform float uBite;",
             fragmentCommon: "varying float vAlong; varying float vLift; varying float vSide; uniform float uMark;",
@@ -318,8 +322,8 @@ export function createSharkActor(spec, gltf, uniforms, length) {
     model = createProceduralShark(spec.gender, length, uniforms, swimU);
   }
 
-  if (spec.gender === "f") model.scale.multiplyScalar(0.9);
-  else model.scale.multiplyScalar(1.06);
+  if (spec.gender === "f") model.scale.multiplyScalar(0.96);
+  else model.scale.multiplyScalar(1.12);
   model.userData.swim = swimU;
   pivot.add(model);
 
@@ -327,7 +331,7 @@ export function createSharkActor(spec, gltf, uniforms, length) {
   labelEl.className = "shark-label " + (spec.gender === "f" ? "female" : "male");
   labelEl.textContent = spec.name;
   const label = new CSS2DObject(labelEl);
-  label.position.set(0, 0.28, 0);
+  label.position.set(0, 0.36, 0);
   pivot.add(label);
 
   return {
@@ -404,7 +408,7 @@ export function updateSharkVisual(shark, dt) {
       swim.uBite.value = 0;
     }
   }
-  shark.label.position.set(0, 0.32, 0);
+  shark.label.position.set(0, 0.40, 0);
 }
 
 export function createProceduralShark(gender, length, uniforms, swimU) {
@@ -847,6 +851,66 @@ function place(group, mesh, x, z, rotY = 0) {
   group.add(mesh);
 }
 
+
+function makeOrganPipe(size, uniforms) {
+  const parts = [];
+  const rng = mulberry(29);
+  const n = 9 + ((rng() * 4) | 0);
+  for (let i = 0; i < n; i++) {
+    const h = 0.38 + rng() * 0.95;
+    const r0 = 0.042 + rng() * 0.032;
+    const r1 = r0 * (0.42 + rng() * 0.28);
+    const geo = new THREE.CylinderGeometry(r1, r0, h, 11, 8);
+    const pos = geo.attributes.position;
+    const leanX = (rng() - 0.5) * 0.42;
+    const leanZ = (rng() - 0.5) * 0.32;
+    for (let vi = 0; vi < pos.count; vi++) {
+      let x = pos.getX(vi), y = pos.getY(vi), z = pos.getZ(vi);
+      const t = (y + h * 0.5) / Math.max(h, 0.001);
+      x += leanX * t * t * h;
+      z += leanZ * t * t * h;
+      const ang = Math.atan2(z, x);
+      const bump = 1 + 0.07 * Math.sin(y * 16 + i * 2.1) * Math.sin(ang * 6);
+      pos.setXYZ(vi, x * bump, y, z * bump);
+    }
+    geo.computeVertexNormals();
+    geo.translate((rng() - 0.5) * 0.32, h * 0.5, (rng() - 0.5) * 0.32);
+    parts.push(geo);
+    if (rng() > 0.48) {
+      const bh = h * (0.22 + rng() * 0.32);
+      const br = r1 * (0.7 + rng() * 0.25);
+      const bgeo = new THREE.CylinderGeometry(br * 0.5, br, bh, 8, 4);
+      const side = rng() > 0.5 ? 1 : -1;
+      bgeo.rotateZ(side * (0.55 + rng() * 0.45));
+      bgeo.translate((rng() - 0.5) * 0.22 + side * 0.06, h * (0.42 + rng() * 0.28), (rng() - 0.5) * 0.2);
+      parts.push(bgeo);
+    }
+  }
+  const merged = mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)), false);
+  if (!merged) return null;
+  displaceOrganic(merged, 0.012);
+  ensureProjectedUv(merged);
+  merged.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    map: coralSurfaceTex("pipe"),
+    color: 0x8a6a48,
+    roughness: 0.88,
+    metalness: 0.02,
+    envMapIntensity: 0.28,
+    flatShading: false,
+  });
+  applyUnderwater(mat, uniforms, { key: "organ-pipe", uniforms: { uCauGain: { value: 0.55 } } });
+  const mesh = new THREE.Mesh(merged, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const wrap = new THREE.Group();
+  wrap.add(mesh);
+  const box = new THREE.Box3().setFromObject(wrap);
+  const s = size / Math.max(box.getSize(new THREE.Vector3()).y, 0.001);
+  wrap.scale.setScalar(s);
+  return wrap;
+}
+
 export function createReefScenery(quality, uniforms) {
   const group = new THREE.Group();
   group.name = "reef";
@@ -867,7 +931,7 @@ export function createReefScenery(quality, uniforms) {
     ["staghorn", 0.72, -1.9, -0.25, 0.5],
     ["elkhorn", 0.7, 1.95, -0.3, -0.4],
     ["pillar", 0.7, -1.7, -0.6, 0.0],
-    ["finger", 0.4, 0.85, -0.58, 0.7],
+    ["finger", 0.52, 0.85, -0.50, 0.7],
     ["seafan", 0.55, -1.15, -0.62, 0.9, { sway: true }],
     ["seafan", 0.42, 1.25, -0.6, -0.8, { sway: true, tint: 0xa85838 }],
     ["softbush", 0.38, -0.2, -0.58, 0.4, { sway: true }],
@@ -888,6 +952,7 @@ export function createReefScenery(quality, uniforms) {
     if (name === "table") mesh = makePlateCoral(size * (0.9 + rng() * 0.2), uniforms);
     else if (name === "barrel_sponge") mesh = makeOrganicSponge(size * (0.9 + rng() * 0.2), uniforms, "barrel");
     else if (name === "vase_sponge") mesh = makeOrganicSponge(size * (0.9 + rng() * 0.2), uniforms, "vase");
+    else if (name === "finger") mesh = makeOrganPipe(size * (1.05 + rng() * 0.2), uniforms);
     else mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, {
       ...(opts || {}),
       phase: rng() * 6.28,
@@ -897,7 +962,7 @@ export function createReefScenery(quality, uniforms) {
   }
   // extra mid-tank colonies and pebbles for a denser, less empty sand bed
   const extras = [
-    ["finger", 0.28, -0.55, 0.22, 0.4],
+    ["finger", 0.36, -0.55, 0.22, 0.4],
     ["lettuce", 0.26, 0.22, 0.42, 1.1],
     ["mushroom", 0.26, 1.0, 0.38, 0.2],
     ["brain", 0.28, -0.82, 0.40, 0.9],
@@ -907,7 +972,9 @@ export function createReefScenery(quality, uniforms) {
   ];
   for (const item of extras) {
     const [name, size, x, z, rot, opts] = item;
-    const mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, { ...(opts || {}), phase: rng() * 6.28, quality });
+    const mesh = name === "finger"
+      ? makeOrganPipe(size * (1.05 + rng() * 0.2), uniforms)
+      : cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, { ...(opts || {}), phase: rng() * 6.28, quality });
     place(group, mesh, x, z, rot);
   }
   addPebbles(group, uniforms, quality, rng);
@@ -1098,11 +1165,11 @@ function sculptBody(sx, sy, sz, segs) {
     let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
     // head at +X, tail at -X
     const t = (x + 1) * 0.5; // 0 tail, 1 head
-    const taper = 0.28 + 0.72 * Math.sin(Math.pow(Math.max(0, t), 0.85) * Math.PI);
-    const snout = t > 0.82 ? 1 + (t - 0.82) * 1.6 : 1;
+    const taper = 0.22 + 0.78 * Math.sin(Math.pow(Math.max(0, t), 0.9) * Math.PI);
+    const snout = t > 0.82 ? 1 + (t - 0.82) * 1.15 : 1;
     x *= sx * snout;
     y *= sy * taper;
-    z *= sz * taper * (0.85 + 0.15 * t);
+    z *= sz * Math.pow(taper, 1.15) * (0.8 + 0.12 * t);
     if (t > 0.9) y *= 0.78; // slightly pointed snout
     if (t < 0.12) { y *= 0.55; z *= 0.45; } // slim caudal peduncle
     pos.setXYZ(i, x, y, z);
@@ -1244,14 +1311,14 @@ function paintFishTex(id) {
 }
 
 const FISH_SHAPE = {
-  bluetang:  { sx: 1.00, sy: 0.82, sz: 0.14, segs: 36, dorsal: [-0.02, 0.58, 0.42, 0.16] },
-  tang:      { sx: 0.92, sy: 0.92, sz: 0.13, segs: 36, dorsal: [-0.06, 0.78, 0.38, 0.28] },
-  butterfly: { sx: 0.92, sy: 0.86, sz: 0.13, segs: 36, dorsal: [0.00, 0.50, 0.36, 0.12] },
-  moorish:   { sx: 1.05, sy: 0.88, sz: 0.12, segs: 36, dorsal: [0.10, 0.95, 0.28, 0.55] },
-  parrot:    { sx: 1.15, sy: 0.62, sz: 0.22, segs: 32, dorsal: [0.08, 0.32, 0.32, 0.10] },
-  cardinal:  { sx: 0.95, sy: 0.44, sz: 0.16, segs: 28, dorsal: [0.08, 0.18, 0.20, 0.08] },
-  mandarin:  { sx: 0.84, sy: 0.54, sz: 0.20, segs: 28, dorsal: [0.08, 0.24, 0.22, 0.10] },
-  clown:     { sx: 0.92, sy: 0.58, sz: 0.22, segs: 32, dorsal: [0.06, 0.28, 0.28, 0.10] },
+  bluetang:  { sx: 1.02, sy: 0.78, sz: 0.10, segs: 36, dorsal: [-0.02, 0.62, 0.44, 0.18] },
+  tang:      { sx: 0.90, sy: 0.88, sz: 0.09, segs: 36, dorsal: [-0.08, 1.15, 0.42, 0.38] },
+  butterfly: { sx: 0.94, sy: 0.84, sz: 0.10, segs: 36, dorsal: [0.00, 0.54, 0.36, 0.14] },
+  moorish:   { sx: 1.08, sy: 0.86, sz: 0.09, segs: 36, dorsal: [0.12, 1.05, 0.28, 0.62] },
+  parrot:    { sx: 1.18, sy: 0.58, sz: 0.15, segs: 32, dorsal: [0.08, 0.34, 0.32, 0.10] },
+  cardinal:  { sx: 0.98, sy: 0.42, sz: 0.12, segs: 28, dorsal: [0.08, 0.18, 0.20, 0.08] },
+  mandarin:  { sx: 0.86, sy: 0.52, sz: 0.14, segs: 28, dorsal: [0.08, 0.24, 0.22, 0.10] },
+  clown:     { sx: 0.94, sy: 0.54, sz: 0.15, segs: 32, dorsal: [0.06, 0.30, 0.28, 0.10] },
 };
 
 function makeEyeMaterial(uniforms) {
@@ -1284,13 +1351,14 @@ function spawnPaintedFish(spec, uniforms, length, phase) {
   const bodyGeo = sculptBody(sh.sx, sh.sy, sh.sz, sh.segs);
   const [dx, dh, dw, doff] = sh.dorsal;
   const back = sh.sy * 0.42;
-  // triangular / swept dorsal sail
+  // triangular / swept dorsal sail (yellow tang gets a tall Zebrasoma sail)
+  const sailH = id === "tang" ? dh * 1.08 : dh;
   const dorsal = finFromShape([
-    [dx + dw * 0.45, back],
-    [dx - dw * 0.20, back],
-    [dx - dw * 0.35 - doff * 0.9, back + dh],
-    [dx + dw * 0.05 - doff * 0.35, back + dh * 0.72],
-  ], 0.012);
+    [dx + dw * 0.50, back],
+    [dx - dw * 0.22, back],
+    [dx - dw * 0.40 - doff * 1.05, back + sailH],
+    [dx + dw * 0.02 - doff * 0.4, back + sailH * 0.70],
+  ], 0.034);
   // forked caudal fin
   const th = sh.sy * 0.58;
   const tail = finFromShape([
@@ -1301,14 +1369,14 @@ function spawnPaintedFish(spec, uniforms, length, phase) {
     [-sh.sx * 1.18, -th * 0.92],
     [-sh.sx * 0.88, -th],
     [-sh.sx * 0.72, -0.06],
-  ], 0.012);
+  ], 0.032);
   // anal fin
   const anal = finFromShape([
     [-0.02, -sh.sy * 0.40],
     [-dw * 0.25, -sh.sy * 0.40],
     [-dw * 0.15 - 0.08, -sh.sy * 0.40 - Math.min(dh * 0.38, sh.sy * 0.36)],
     [0.04, -sh.sy * 0.42],
-  ], 0.01);
+  ], 0.024);
   // pectorals, slightly flared in Z
   const pecs = [];
   for (const s of [-1, 1]) {
@@ -1317,7 +1385,7 @@ function spawnPaintedFish(spec, uniforms, length, phase) {
       [-0.16,  0.07],
       [-0.20, -0.02],
       [-0.04, -0.06],
-    ], 0.008);
+    ], 0.018);
     pec.rotateY(s * 0.65);
     pec.rotateZ(-0.15);
     pec.translate(sh.sx * 0.16, -sh.sy * 0.06, s * (sh.sz * 0.55 + 0.03));

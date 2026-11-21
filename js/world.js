@@ -256,11 +256,13 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
       .replace(
         "#include <opaque_fragment>",
         `{
-        float dist = length(vViewPosition);
+        // Cap path length so the wide room camera does not milk the whole tank grey.
+        float dist = min(length(vViewPosition), 2.35);
         float depthFade = smoothstep(2.05, 0.12, vWorldPos.y);
+        float backFade = smoothstep(0.20, -0.70, vWorldPos.z);
         float absorb = 1.0 - exp(-clamp(dist, 0.0, 40.0) * uFogDensity);
-        absorb = clamp(absorb + depthFade * 0.18, 0.0, 0.78);
-        vec3 deep = uWaterColor * mix(0.42, 0.20, uNight);
+        absorb = clamp(absorb + depthFade * 0.12 + backFade * 0.16, 0.0, 0.58);
+        vec3 deep = uWaterColor * mix(0.58, 0.26, uNight);
         outgoingLight = mix(outgoingLight, deep, absorb);
         float c = caustic(vWorldPos.xz);
         float up = clamp(dot(normalize(normal), vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
@@ -354,8 +356,8 @@ export async function createWorld(canvas, quality, manager) {
   const uniforms = {
     uTime: { value: 0 },
     uNight: { value: 0 },
-    uWaterColor: { value: new THREE.Color(0x0a4a5c) },
-    uFogDensity: { value: 0.16 },
+    uWaterColor: { value: new THREE.Color(0x0a5a70) },
+    uFogDensity: { value: 0.12 },
     uCausticColor: { value: new THREE.Color(0x5ef0d8) },
     uWaterLevel: { value: TANK.water },
   };
@@ -416,12 +418,12 @@ export async function createWorld(canvas, quality, manager) {
   root.add(interior);
 
   const tankBackMat = new THREE.MeshStandardMaterial({
-    color: 0x0c5a68,
+    color: 0x0a4e5c,
     roughness: 0.92,
     metalness: 0,
-    envMapIntensity: 0.2,
-    emissive: new THREE.Color(0x083844),
-    emissiveIntensity: 0.22,
+    envMapIntensity: 0.16,
+    emissive: new THREE.Color(0x052830),
+    emissiveIntensity: 0.12,
   });
   applyUnderwater(tankBackMat, uniforms, { key: "tank-back" });
   const tankBack = new THREE.Mesh(
@@ -1283,11 +1285,11 @@ function makeGlass(quality) {
         depthWrite: false,
       })
     : new THREE.MeshStandardMaterial({
-        color: 0xc8e6ee,
+        color: 0xa8d0da,
         roughness: 0.08,
         metalness: 0.0,
         transparent: true,
-        opacity: 0.07,
+        opacity: 0.055,
         envMapIntensity: 0.35,
         side: THREE.DoubleSide,
         depthWrite: false,
@@ -1370,8 +1372,8 @@ function makeLights(root, quality) {
   root.add(sun);
 
   const hood = new THREE.SpotLight(0xd8f0ff, 26, 8, Math.PI / 3.4, 0.62, 1.15);
-  hood.position.set(0, TANK.h + 0.05, -0.12);
-  hood.target.position.set(0, 0.42, -0.28);
+  hood.position.set(0, TANK.h + 0.05, -0.08);
+  hood.target.position.set(0, 0.72, 0.16);
   hood.castShadow = !!quality.shadows && !quality.mobile && !quality.software;
   root.add(hood);
   root.add(hood.target);
@@ -1411,7 +1413,12 @@ function makeLights(root, quality) {
   const amb = new THREE.AmbientLight(0x1a140e, 0.05);
   root.add(amb);
 
-  return { hemi, sun, hood, hood2, hood3, fill, rect, spill, roomFill, amb };
+  // cool rim from the back wall so the sharks read against the water
+  const rim = new THREE.DirectionalLight(0xb8e8ff, 0.32);
+  rim.position.set(-0.35, 1.62, -1.2);
+  root.add(rim);
+
+  return { hemi, sun, hood, hood2, hood3, fill, rect, spill, roomFill, amb, rim };
 }
 
 function makeGodRays(n) {
@@ -1446,8 +1453,8 @@ function makeGodRays(n) {
         float bands = 0.5 + 0.5 * noise(vec2(vUv.x * 16.0, uTime * 0.15));
         float flicker = 0.78 + 0.22 * sin(uTime * 1.3 + vUv.x * 20.0);
         float fall = pow(1.0 - vUv.y, 1.05);
-        float a = shaft * bands * flicker * fall * mix(1.15, 0.36, uNight);
-        vec3 teal = vec3(0.28, 0.92, 0.82);
+        float a = shaft * bands * flicker * fall * mix(0.82, 0.28, uNight);
+        vec3 teal = vec3(0.18, 0.78, 0.80);
         vec3 warm = vec3(1.0, 0.78, 0.42);
         vec3 col = mix(teal, warm, smoothstep(0.7, 1.0, 1.0 - vUv.y) * 0.55);
         gl_FragColor = vec4(col * a, a);
@@ -1479,10 +1486,11 @@ export function setDayNight(world, nightT) {
   if (L.rect) L.rect.intensity = THREE.MathUtils.lerp(q.software ? 0 : 5, 2, nightT);
   if (L.spill) L.spill.intensity = THREE.MathUtils.lerp(22, 8, nightT);
   if (L.roomFill) L.roomFill.intensity = THREE.MathUtils.lerp(1.6, 0.7, nightT);
+  if (L.rim) L.rim.intensity = THREE.MathUtils.lerp(0.32, 0.12, nightT);
   world.scene.background.copy(
     new THREE.Color(0x0a0d10).lerp(new THREE.Color(0x05060a), nightT)
   );
-  world.uniforms.uWaterColor.value.set(nightT > 0.5 ? 0x061828 : 0x0a4e60);
+  world.uniforms.uWaterColor.value.set(nightT > 0.5 ? 0x061828 : 0x0a5a70);
   world.uniforms.uNight.value = nightT;
   const dayExp = q.exposure || 1.15;
   world.renderer.toneMappingExposure = THREE.MathUtils.lerp(dayExp, dayExp * 0.82, nightT);

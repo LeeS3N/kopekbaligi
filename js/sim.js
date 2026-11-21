@@ -176,7 +176,7 @@ export function createGame(world, gltf) {
   }
 
   const sharks = specs.map((sp, i) => {
-    const actor = createSharkActor({ ...sp, id: i, x: i ? 0.55 : -0.55, y: 0.95, z: 0.05 }, gltf, world.uniforms, i === 0 ? 1.22 : 1.08);
+    const actor = createSharkActor({ ...sp, id: i, x: i ? 0.48 : -0.62, y: 1.08, z: 0.22 }, gltf, world.uniforms, i === 0 ? 1.40 : 1.24);
     world.interior.add(actor.pivot);
     return actor;
   });
@@ -419,20 +419,20 @@ export function createGame(world, gltf) {
         const side = s.id === 0 ? -1 : 1;
         s.tx = clamp(midX + side * 0.38, b.minX, b.maxX);
         s.ty = clamp(midY, b.minY, b.maxY);
-        s.tz = clamp(midZ, b.minZ, b.maxZ);
+        s.tz = clamp(midZ, -0.04, 0.46);
       } else if (canBond()) {
         s.state = "couple";
         const behind = mate.heading + (s.id === 0 ? 0.9 : -0.9);
         s.tx = clamp(mate.x + Math.cos(behind) * 0.7, b.minX, b.maxX);
-        s.ty = clamp(mate.y + (s.id ? 0.1 : -0.1), b.minY, b.maxY);
-        s.tz = clamp(mate.z + Math.sin(behind) * 0.25, b.minZ, b.maxZ);
+        s.ty = clamp(mate.y + (s.id ? 0.1 : -0.1), 0.78, 1.36);
+        s.tz = clamp(mate.z + Math.sin(behind) * 0.25, -0.04, 0.46);
       } else {
         s.state = "wander";
         s.retarget -= dt;
         if (s.retarget <= 0) {
-          s.tx = rand(b.minX, b.maxX);
-          s.ty = rand(b.minY, b.maxY);
-          s.tz = rand(b.minZ, b.maxZ);
+          s.tx = rand(b.minX * 0.85, b.maxX * 0.85);
+          s.ty = rand(0.78, 1.36);
+          s.tz = rand(-0.04, 0.46);
           s.retarget = rand(1.8, 4.0);
         }
       }
@@ -446,6 +446,13 @@ export function createGame(world, gltf) {
       if (s.y > b.maxY - 0.08) ay -= 1.4;
       if (s.z < b.minZ + 0.1) az += 1.2;
       if (s.z > b.maxZ - 0.1) az -= 1.2;
+      // stay in the front / middle third so they read from the living room
+      if (s.state !== "hunt") {
+        if (s.z < -0.10) az += 1.6;
+        if (s.z > 0.50) az -= 1.3;
+        if (s.y < 0.74) ay += 1.0;
+        if (s.y > 1.40) ay -= 1.0;
+      }
 
       const steer = 2.2 + (s.state === "hunt" ? 1.2 : 0);
       s.vx = lerp(s.vx, ax * maxSp, 1 - Math.pow(0.02, dt * steer * 0.4));
