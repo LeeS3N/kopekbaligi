@@ -1065,7 +1065,7 @@ function makeSand(tex, quality) {
     map: tex.sandDiff,
     normalMap: tex.sandNor,
     roughnessMap: tex.sandRough,
-    color: 0xc4a872,
+    color: 0xb89660,
     roughness: 0.88,
     metalness: 0.0,
     envMapIntensity: 0.25,

@@ -586,8 +586,8 @@ export function createReefScenery(quality, uniforms) {
     ["seafan", 0.42, 1.25, -0.6, -0.8, { sway: true, tint: 0xa85838 }],
     ["softbush", 0.38, -0.2, -0.58, 0.4, { sway: true }],
     ["carnation", 0.32, 0.35, -0.48, 1.4, { sway: true }],
-    ["barrel_sponge", 0.32, -0.7, 0.48, 0.3, { tint: 0xb04a22 }],
-    ["vase_sponge", 0.26, 0.95, 0.42, 0.8, { tint: 0xa85028 }],
+    ["barrel_sponge", 0.28, -1.05, -0.35, 0.3, { tint: 0xb04a22 }],
+    ["vase_sponge", 0.24, 1.15, -0.38, 0.8, { tint: 0xa85028 }],
     ["clam", 0.28, -0.15, 0.5, 0.4],
     ["starfish", 0.16, 0.55, 0.52, 0.2],
     ["featherduster", 0.28, -1.05, 0.38, 0.6, { sway: true }],
@@ -608,13 +608,16 @@ export function createReefScenery(quality, uniforms) {
   // extra mid-tank colonies and pebbles for a denser, less empty sand bed
   const extras = [
     ["finger", 0.28, -0.55, 0.22, 0.4],
-    ["lettuce", 0.22, 0.25, 0.32, 1.1],
-    ["mushroom", 0.22, 1.05, 0.18, 0.2],
-    ["brain", 0.24, -0.85, 0.15, 0.9],
+    ["lettuce", 0.26, 0.22, 0.42, 1.1],
+    ["mushroom", 0.26, 1.0, 0.38, 0.2],
+    ["brain", 0.28, -0.82, 0.40, 0.9],
+    ["softbush", 0.22, 0.55, 0.28, 0.6, { sway: true }],
+    ["lettuce", 0.2, -0.2, 0.48, 0.3],
     ["starfish", 0.12, -0.4, 0.55, 1.3],
   ];
-  for (const [name, size, x, z, rot] of extras) {
-    const mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, { phase: rng() * 6.28, quality });
+  for (const item of extras) {
+    const [name, size, x, z, rot, opts] = item;
+    const mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, { ...(opts || {}), phase: rng() * 6.28, quality });
     place(group, mesh, x, z, rot);
   }
   addPebbles(group, uniforms, quality, rng);
