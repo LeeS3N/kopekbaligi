@@ -145,14 +145,15 @@ function upgradeSharkMaterial(src, gender) {
     if (src.map) p.map.colorSpace = THREE.SRGBColorSpace;
   }
   if (gender === "f") {
-    p.color.multiply(new THREE.Color(1.15, 1.02, 0.92));
-    p.emissive = new THREE.Color(0x3a2218);
+    p.color.multiply(new THREE.Color(0.95, 0.82, 0.72));
+    p.emissive = new THREE.Color(0x1a100c);
   } else {
-    p.color.multiply(new THREE.Color(1.05, 1.08, 1.12));
-    p.emissive = new THREE.Color(0x182028);
+    p.color.multiply(new THREE.Color(0.46, 0.52, 0.62));
+    p.emissive = new THREE.Color(0x0a1218);
   }
-  p.emissiveIntensity = 0.22;
-  p.envMapIntensity = 0.7;
+  p.emissiveIntensity = 0.05;
+  p.envMapIntensity = 0.55;
+  p.roughness = Math.min(Math.max(p.roughness, 0.42), 0.62);
   return p;
 }
 
@@ -304,14 +305,11 @@ export function createProceduralShark(gender, length, uniforms, swimU) {
   const group = new THREE.Group();
   const female = gender === "f";
   const geo = buildSharkGeometry(length);
-  const mat = new THREE.MeshPhysicalMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     color: female ? 0xc9a090 : 0x6a8494,
     roughness: 0.42,
     metalness: 0.08,
     vertexColors: true,
-    sheen: 0.5,
-    sheenColor: female ? 0xf0c8b4 : 0xd0e0e8,
-    clearcoat: 0.15,
   });
   const su = swimU || { uAmp: { value: 0.22 }, uPhase: { value: Math.random() * 6.28 } };
   applyUnderwater(mat, uniforms, {
@@ -684,20 +682,21 @@ export function updateFish(schools, sharks, dt) {
 }
 
 export function createBubbles(quality) {
-  const geo = new THREE.SphereGeometry(1, 10, 8);
-  const mat = new THREE.MeshPhysicalMaterial({
+  const geo = new THREE.SphereGeometry(1, 8, 6);
+  const Mat = quality.transmission ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+  const mat = new Mat({
     color: 0xcfefff,
     roughness: 0.05,
     metalness: 0,
-    transmission: quality.transmission ? 0.7 : 0.0,
-    thickness: 0.1,
     transparent: true,
     opacity: 0.35,
     depthWrite: false,
+    ...(quality.transmission ? { transmission: 0.7, thickness: 0.1 } : {}),
   });
   const inst = new THREE.InstancedMesh(geo, mat, quality.bubbles);
   inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   inst.frustumCulled = false;
+  inst.raycast = () => {};
   const items = [];
   for (let i = 0; i < quality.bubbles; i++) {
     items.push({
@@ -709,6 +708,16 @@ export function createBubbles(quality) {
       ph: Math.random() * 6.28,
     });
   }
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < items.length; i++) {
+    const b = items[i];
+    dummy.position.set(b.x, b.y, b.z);
+    dummy.scale.setScalar(b.r);
+    dummy.updateMatrix();
+    inst.setMatrixAt(i, dummy.matrix);
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  inst.computeBoundingSphere();
   return { inst, items };
 }
 
@@ -987,11 +996,9 @@ function starGeo(r0, r1, n) {
 
 function makeJelly() {
   const group = new THREE.Group();
-  const mat = new THREE.MeshPhysicalMaterial({
+  const mat = new THREE.MeshStandardMaterial({
     color: 0xb8f0ff,
     roughness: 0.2,
-    transmission: 0.5,
-    thickness: 0.1,
     transparent: true,
     opacity: 0.45,
     emissive: 0x3a88aa,

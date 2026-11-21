@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { detectQuality, createWorld, updateWorldTime, updateCameraIdle } from "./world.js";
+import { detectQuality, QUALITY_KEY, createWorld, updateWorldTime, updateCameraIdle } from "./world.js";
 import { preloadActors, loadSharkGltf } from "./actors.js";
 import { createGame } from "./sim.js";
 
@@ -17,7 +17,20 @@ function setProgress(p, text) {
   if (el && text) el.textContent = text;
 }
 
+function bindQualitySelect() {
+  const sel = document.getElementById("quality-select");
+  if (!sel) return;
+  let stored = "auto";
+  try { stored = localStorage.getItem(QUALITY_KEY) || "auto"; } catch (e) {}
+  if (["auto", "ultra", "high", "medium"].includes(stored)) sel.value = stored;
+  sel.addEventListener("change", () => {
+    try { localStorage.setItem(QUALITY_KEY, sel.value); } catch (e) {}
+    location.reload();
+  });
+}
+
 async function boot() {
+  bindQualitySelect();
   const canvas = document.getElementById("tank");
   const quality = detectQuality();
   const manager = new THREE.LoadingManager();
@@ -43,6 +56,7 @@ async function boot() {
   const game = createGame(world, gltf);
   window.__world = world;
   window.__game = game;
+  window.__quality = quality;
 
   // reveal UI
   document.getElementById("loader").classList.add("done");

@@ -33,27 +33,98 @@ export const ROOM = {
   maxZ: 7.35,
 };
 
+export const QUALITY_KEY = "askAkvaryumu:quality";
+
+const PRESETS = {
+  ultra: {
+    bloom: true, shadows: true, shadowSize: 2048, bubbles: 110, fish: 42, kelp: 12,
+    snow: 720, godrays: 9, transmission: true, gtao: true, dof: true, smaa: true,
+    fxaa: false, post: true, tex1k: false, simpleWater: false, simpleGlass: false,
+    hdri: true, hdriPath: "./hdri/fireplace_2k.hdr", grade: true, exposure: 1.12, tone: "agx",
+  },
+  high: {
+    bloom: true, shadows: true, shadowSize: 1024, bubbles: 80, fish: 32, kelp: 10,
+    snow: 480, godrays: 7, transmission: true, gtao: false, dof: false, smaa: false,
+    fxaa: true, post: true, tex1k: false, simpleWater: false, simpleGlass: false,
+    hdri: true, hdriPath: "./hdri/fireplace_1k.hdr", grade: false, exposure: 1.15, tone: "aces",
+  },
+  medium: {
+    bloom: false, shadows: false, shadowSize: 512, bubbles: 50, fish: 22, kelp: 8,
+    snow: 220, godrays: 4, transmission: false, gtao: false, dof: false, smaa: false,
+    fxaa: false, post: true, tex1k: true, simpleWater: true, simpleGlass: true,
+    hdri: false, hdriPath: "./hdri/fireplace_1k.hdr", grade: false, exposure: 1.18, tone: "aces",
+  },
+};
+
+function readQualityChoice() {
+  const params = new URLSearchParams(location.search);
+  const q = (params.get("q") || "").toLowerCase();
+  if (q === "ultra" || q === "high" || q === "medium" || q === "orta" || q === "low") {
+    return q === "orta" || q === "low" ? "medium" : q;
+  }
+  try {
+    const stored = localStorage.getItem(QUALITY_KEY);
+    if (stored === "ultra" || stored === "high" || stored === "medium") return stored;
+  } catch (e) {}
+  return "auto";
+}
+
 export function detectQuality() {
   const ua = navigator.userAgent || "";
   const mobile = /Mobi|Android|iPhone|iPad|iPod/i.test(ua) || window.innerWidth < 740;
   const dprCap = mobile ? 1.2 : 1.85;
-  return {
+  const choice = readQualityChoice();
+  let preset = choice;
+  if (preset === "auto") preset = mobile ? "medium" : "ultra";
+  const src = PRESETS[preset] || PRESETS.medium;
+  const quality = {
     mobile,
     dpr: Math.min(window.devicePixelRatio || 1, dprCap),
-    bloom: true,
-    shadows: true,
-    shadowSize: mobile ? 512 : 2048,
-    bubbles: mobile ? 36 : 110,
-    fish: mobile ? 16 : 42,
-    kelp: mobile ? 6 : 12,
-    snow: mobile ? 180 : 720,
-    godrays: mobile ? 5 : 9,
-    transmission: !mobile,
-    gtao: !mobile,
-    dof: !mobile,
-    smaa: !mobile,
-    hdri: mobile ? "./hdri/fireplace_1k.hdr" : "./hdri/fireplace_2k.hdr",
+    choice,
+    preset,
+    software: false,
+    room: true,
+    ...src,
   };
+  return applyUrlFlags(quality);
+}
+
+export function applyUrlFlags(quality) {
+  const p = new URLSearchParams(location.search);
+  if (p.has("nopost")) quality.post = false;
+  if (p.has("nogtao")) quality.gtao = false;
+  if (p.has("nodof")) quality.dof = false;
+  if (p.has("notrans")) quality.transmission = false;
+  if (p.has("nobloom")) quality.bloom = false;
+  if (p.has("noroom")) quality.room = false;
+  if (p.has("nofxaa") || p.has("noxaa")) quality.fxaa = false;
+  if (p.has("noshadow")) quality.shadows = false;
+  if (p.has("nohdri")) quality.hdri = false;
+  return quality;
+}
+
+export function finalizeQuality(quality, gpuStr) {
+  quality.software = /swiftshader|llvmpipe|software/i.test(String(gpuStr || ""));
+  quality.gpu = String(gpuStr || "");
+  // Software GL cannot reliably run GTAO/DOF/transmission/SMAA. Ultra still gets ACES + vignette + bright tank.
+  if (quality.software) {
+    if (quality.choice === "auto") {
+      Object.assign(quality, PRESETS.medium, { preset: "medium", mobile: quality.mobile, dpr: quality.dpr, choice: "auto", software: true, room: quality.room });
+    }
+    quality.gtao = false;
+    quality.dof = false;
+    quality.transmission = false;
+    quality.smaa = false;
+    quality.fxaa = false;
+    quality.simpleGlass = true;
+    quality.simpleWater = true;
+    quality.hdri = false;
+    quality.shadows = false;
+    quality.tex1k = true;
+    quality.tone = "aces";
+    quality.exposure = Math.max(quality.exposure || 1, 1.18);
+  }
+  return applyUrlFlags(quality);
 }
 
 export function tankBounds() {
@@ -74,7 +145,7 @@ function texLoader(manager) {
     const t = l.load(url);
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.anisotropy = 8;
+    t.anisotropy = 4;
     t.repeat.set(repeat, repeat);
     return t;
   };
@@ -143,6 +214,8 @@ export function dequantizeObject(root) {
       changed = true;
     }
     if (changed) {
+      if (geo.attributes.position && !geo.attributes.normal) geo.computeVertexNormals();
+      else if (geo.attributes.position) geo.computeVertexNormals();
       geo.computeBoundingBox();
       geo.computeBoundingSphere();
       o.geometry = geo;
@@ -155,17 +228,13 @@ export let USE_UNDERWATER_SHADERS = true;
 
 export function applyUnderwater(material, uniforms, hooks = {}) {
   if (!USE_UNDERWATER_SHADERS) return;
-
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
     shader.uniforms.uNight = uniforms.uNight;
     shader.uniforms.uWaterColor = uniforms.uWaterColor;
     shader.uniforms.uFogDensity = uniforms.uFogDensity;
-    shader.uniforms.uCausticColor = uniforms.uCausticColor;
-    shader.uniforms.uWaterLevel = uniforms.uWaterLevel;
-    if (hooks.uniforms) {
-      Object.assign(shader.uniforms, hooks.uniforms);
-    }
+    if (uniforms.uCausticColor) shader.uniforms.uCausticColor = uniforms.uCausticColor;
+    if (hooks.uniforms) Object.assign(shader.uniforms, hooks.uniforms);
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -187,44 +256,21 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
         "#include <opaque_fragment>",
         `{
         float dist = length(vViewPosition);
-        float depth = max(0.0, uWaterLevel - vWorldPos.y);
-        vec3 ext = vec3(0.55, 0.16, 0.10);
-        vec3 trans = exp(-ext * (dist * uFogDensity * 6.5 + depth * 0.42));
-        outgoingLight *= trans;
-        vec3 scatter = uWaterColor * (1.0 - trans);
-        outgoingLight += scatter * mix(0.42, 0.22, uNight);
-        vec3 nW = normalize(vNormalW + vec3(0.0, 0.0001, 0.0));
-        float up = smoothstep(0.08, 0.85, nW.y);
-        float cau = caustic(vWorldPos.xz * 1.65);
-        outgoingLight += cau * up * uCausticColor * mix(0.85, 0.28, uNight) * trans;
-        gl_FragColor = vec4(outgoingLight, diffuseColor.a);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-        #include <fog_fragment>
-        #include <premultiplied_alpha_fragment>
-        #include <dithering_fragment>
-      }`
+        float depthFade = smoothstep(2.05, 0.12, vWorldPos.y);
+        float absorb = 1.0 - exp(-clamp(dist, 0.0, 40.0) * uFogDensity);
+        absorb = clamp(absorb + depthFade * 0.18, 0.0, 0.78);
+        vec3 deep = uWaterColor * mix(0.42, 0.20, uNight);
+        outgoingLight = mix(outgoingLight, deep, absorb);
+        float c = caustic(vWorldPos.xz);
+        float up = clamp(dot(normalize(normal), vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
+        vec3 cauCol = vec3(0.55, 0.95, 0.92);
+        outgoingLight += cauCol * (0.28 + 1.15 * c) * up * mix(1.0, 0.28, uNight) * (1.0 - absorb * 0.35);
+        }
+        #include <opaque_fragment>`
       );
-    // vNormalW: inject world normal
-    if (!shader.vertexShader.includes("vNormalW")) {
-      shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 vNormalW;")
-        .replace(
-          "#include <defaultnormal_vertex>",
-          `#include <defaultnormal_vertex>
-          vNormalW = normalize(mat3(modelMatrix) * objectNormal);`
-        );
-    }
-    if (!shader.fragmentShader.includes("varying vec3 vNormalW")) {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <common>",
-        "#include <common>\nvarying vec3 vNormalW;"
-      );
-    }
     material.userData.shader = shader;
   };
-  const key = hooks.key || "uw";
-  material.customProgramCacheKey = () => key;
+  material.customProgramCacheKey = () => "uw-safe-" + (hooks.key || "base");
 }
 
 const GRADE_SHADER = {
@@ -272,12 +318,12 @@ export async function createWorld(canvas, quality, manager) {
   RectAreaLightUniformsLib.init();
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x05060a);
+  scene.background = new THREE.Color(0x0a0808);
   scene.fog = null;
 
-  const camera = new THREE.PerspectiveCamera(quality.mobile ? 48 : 34, 1, 0.12, 60);
-  camera.position.set(2.15, 1.28, 5.9);
-  camera.lookAt(0.0, 0.95, 0.15);
+  const camera = new THREE.PerspectiveCamera(quality.mobile ? 52 : 42, 1, 0.1, 60);
+  camera.position.set(1.55, 1.42, 5.65);
+  camera.lookAt(0.0, 0.68, 0.2);
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -289,49 +335,34 @@ export async function createWorld(canvas, quality, manager) {
   renderer.setPixelRatio(quality.dpr);
   renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || window.innerHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.AgXToneMapping;
-  renderer.toneMappingExposure = 1.18;
-  renderer.shadowMap.enabled = quality.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const gpu = renderer.getContext().getExtension("WEBGL_debug_renderer_info");
   const gpuStr = gpu
     ? renderer.getContext().getParameter(gpu.UNMASKED_RENDERER_WEBGL)
     : "";
-  quality.software = /swiftshader|llvmpipe|software/i.test(String(gpuStr));
-  if (quality.software) {
-    quality.gtao = false;
-    quality.transmission = false;
-    quality.smaa = false;
-    quality.shadows = false;
-    quality.dof = false;
-    quality.bloom = true;
-    quality.godrays = 0;
-    quality.simpleWater = true;
-    quality.bloom = false;
-    USE_UNDERWATER_SHADERS = false;
-    renderer.shadowMap.enabled = false;
-    renderer.toneMapping = THREE.NoToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    scene.fog = null;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.setPixelRatio(Math.min(quality.dpr, 1.35));
-  }
+  finalizeQuality(quality, gpuStr);
+  USE_UNDERWATER_SHADERS = true;
+  renderer.toneMapping = quality.tone === "agx" ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = quality.exposure;
+  renderer.shadowMap.enabled = !!quality.shadows;
+  if (quality.software) renderer.setPixelRatio(Math.min(quality.dpr, 1.25));
+  if (quality.noroom) quality.room = false;
 
   const uniforms = {
     uTime: { value: 0 },
     uNight: { value: 0 },
-    uWaterColor: { value: new THREE.Color(0x05384a) },
-    uFogDensity: { value: 0.028 },
+    uWaterColor: { value: new THREE.Color(0x0a4e60) },
+    uFogDensity: { value: 0.14 },
     uCausticColor: { value: new THREE.Color(0x5ef0d8) },
     uWaterLevel: { value: TANK.water },
   };
 
   const load = texLoader(manager);
   const tex = {
-    sandDiff: load("./textures/coast_sand_01_diff_2k.jpg", true, 3.0),
-    sandNor: load("./textures/coast_sand_01_nor_gl_2k.jpg", false, 3.0),
-    sandRough: load("./textures/coast_sand_01_rough_1k.jpg", false, 3.0),
+    sandDiff: load(quality.tex1k ? "./textures/coast_sand_01_diff_1k.jpg" : "./textures/coast_sand_01_diff_2k.jpg", true, 3.2),
+    sandNor: load(quality.tex1k ? "./textures/coast_sand_01_nor_gl_1k.jpg" : "./textures/coast_sand_01_nor_gl_2k.jpg", false, 3.2),
+    sandRough: load("./textures/coast_sand_01_rough_1k.jpg", false, 3.2),
     rockDiff: load("./textures/rock_face_03_diff_1k.jpg", true, 1.4),
     rockNor: load("./textures/rock_face_03_nor_gl_1k.jpg", false, 1.4),
     rockRough: load("./textures/rock_face_03_rough_1k.jpg", false, 1.4),
@@ -351,14 +382,17 @@ export async function createWorld(canvas, quality, manager) {
   const root = new THREE.Group();
   scene.add(root);
 
-  const room = buildLivingRoom(tex, quality);
-  root.add(room);
-  await loadSofa(room, manager);
+  let room = null;
+  if (quality.room) {
+    room = buildLivingRoom(tex, quality);
+    root.add(room);
+    await loadSofa(room, manager);
+  }
 
   const cabinet = makeCabinet(tex);
   root.add(cabinet);
 
-  const sand = makeSand(tex);
+  const sand = makeSand(tex, quality);
   applyUnderwater(sand.material, uniforms);
   root.add(sand);
 
@@ -366,9 +400,15 @@ export async function createWorld(canvas, quality, manager) {
   interior.name = "interior";
   root.add(interior);
 
-  const tankBackMat = new THREE.MeshBasicMaterial({
-    color: 0x2db8c8,
+  const tankBackMat = new THREE.MeshStandardMaterial({
+    color: 0x0c5a68,
+    roughness: 0.92,
+    metalness: 0,
+    envMapIntensity: 0.2,
+    emissive: new THREE.Color(0x083844),
+    emissiveIntensity: 0.22,
   });
+  applyUnderwater(tankBackMat, uniforms, { key: "tank-back" });
   const tankBack = new THREE.Mesh(
     new THREE.PlaneGeometry(TANK.w - 0.08, TANK.water - TANK.sand),
     tankBackMat
@@ -386,7 +426,7 @@ export async function createWorld(canvas, quality, manager) {
   root.add(waterSurface);
 
   const glass = makeGlass(quality);
-  if (!quality.software) root.add(glass);
+  root.add(glass);
 
   const frame = makeFrame();
   root.add(frame);
@@ -398,13 +438,13 @@ export async function createWorld(canvas, quality, manager) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
-  controls.target.set(0.0, 0.95, 0.15);
-  controls.minDistance = 1.55;
-  controls.maxDistance = 8.2;
-  controls.minPolarAngle = 0.72;
-  controls.maxPolarAngle = 1.52;
-  controls.minAzimuthAngle = -1.15;
-  controls.maxAzimuthAngle = 1.22;
+  controls.target.set(0.0, 0.68, 0.2);
+  controls.minDistance = 1.35;
+  controls.maxDistance = 8.0;
+  controls.minPolarAngle = 0.78;
+  controls.maxPolarAngle = 1.48;
+  controls.minAzimuthAngle = -1.05;
+  controls.maxAzimuthAngle = 1.15;
   controls.enablePan = false;
   controls.update();
 
@@ -452,15 +492,15 @@ export async function createWorld(canvas, quality, manager) {
 }
 
 async function loadEnvironment(renderer, scene, quality, manager) {
-  if (quality.software) {
+  if (quality.software || !quality.hdri) {
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    if ("environmentIntensity" in scene) scene.environmentIntensity = 0.22;
+    if ("environmentIntensity" in scene) scene.environmentIntensity = 0.35;
     pmrem.dispose();
     return;
   }
   try {
-    const hdr = await new HDRLoader(manager).loadAsync(quality.hdri);
+    const hdr = await new HDRLoader(manager).loadAsync(quality.hdriPath || "./hdri/fireplace_1k.hdr");
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const pmrem = new THREE.PMREMGenerator(renderer);
     const env = pmrem.fromEquirectangular(hdr).texture;
@@ -478,16 +518,16 @@ async function loadEnvironment(renderer, scene, quality, manager) {
 }
 
 function buildComposer(renderer, scene, camera, quality, uniforms) {
-  const type = quality.software ? THREE.UnsignedByteType : THREE.HalfFloatType;
-  const rt = new THREE.WebGLRenderTarget(1, 1, {
-    type,
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    colorSpace: quality.software ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace,
-    depthBuffer: true,
-  });
-  const composer = new EffectComposer(renderer, rt);
+  // Default composer (HalfFloat + linear) matches the known-good v2 path.
+  // A custom UnsignedByte/sRGB target was causing posterization on software GL.
+  const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
+  composer.userData = {};
+
+  if (quality.post === false) {
+    composer.addPass(new OutputPass());
+    return composer;
+  }
 
   if (quality.gtao) {
     try {
@@ -497,49 +537,75 @@ function buildComposer(renderer, scene, camera, quality, uniforms) {
       composer.addPass(gtao);
     } catch (e) {
       console.warn("GTAO unavailable", e);
+      quality.gtao = false;
     }
   }
 
   if (quality.dof) {
     try {
       const bokeh = new BokehPass(scene, camera, {
-        focus: 6.2,
+        focus: 5.0,
         aperture: 0.00016,
-        maxblur: quality.software ? 0.006 : 0.01,
+        maxblur: 0.01,
       });
       composer.addPass(bokeh);
-      composer.userData = composer.userData || {};
       composer.userData.bokeh = bokeh;
     } catch (e) {
       console.warn("DOF unavailable", e);
+      quality.dof = false;
     }
   }
 
   if (quality.bloom) {
-    const bloom = new UnrealBloomPass(
-      new THREE.Vector2(1, 1),
-      quality.software ? 0.38 : 0.52,
-      quality.software ? 0.35 : 0.48,
-      0.78
-    );
-    composer.addPass(bloom);
+    try {
+      const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.28, 0.5, 0.8);
+      composer.addPass(bloom);
+    } catch (e) {
+      console.warn("Bloom unavailable", e);
+      quality.bloom = false;
+    }
   }
+
+  // Mild vignette like v2 (stable on SwiftShader / llvmpipe)
+  const vignette = new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      offset: { value: 0.85 },
+      darkness: { value: 0.52 },
+    },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform sampler2D tDiffuse; uniform float offset, darkness; varying vec2 vUv;
+      void main(){
+        vec4 c = texture2D(tDiffuse, vUv);
+        vec2 uv = (vUv - 0.5) * vec2(offset, offset);
+        float v = smoothstep(0.0, 0.9, dot(uv, uv));
+        c.rgb = mix(c.rgb, c.rgb * (1.0 - darkness), v);
+        gl_FragColor = c;
+      }`,
+  });
+  composer.addPass(vignette);
 
   composer.addPass(new OutputPass());
 
-  composer.userData = composer.userData || {};
-  if (!quality.software) {
-    const grade = new ShaderPass(GRADE_SHADER);
-    grade.uniforms.uGrain.value = quality.mobile ? 0.018 : 0.03;
-    composer.addPass(grade);
-    composer.userData.grade = grade;
+  if (quality.grade) {
+    try {
+      const grade = new ShaderPass(GRADE_SHADER);
+      grade.uniforms.uGrain.value = quality.mobile ? 0.016 : 0.025;
+      composer.addPass(grade);
+      composer.userData.grade = grade;
+    } catch (e) {
+      console.warn("Grade unavailable", e);
+    }
   }
 
   if (quality.smaa) {
     try { composer.addPass(new SMAAPass()); }
-    catch (e) { composer.addPass(new FXAAPass()); }
-  } else {
-    composer.addPass(new FXAAPass());
+    catch (e) {
+      if (quality.fxaa) try { composer.addPass(new FXAAPass()); } catch (e2) {}
+    }
+  } else if (quality.fxaa) {
+    try { composer.addPass(new FXAAPass()); } catch (e) {}
   }
 
   return composer;
@@ -560,10 +626,10 @@ function buildLivingRoom(tex, quality) {
     normalMap: quality && quality.software ? null : tex.floorNor,
     roughnessMap: tex.floorArm,
     metalnessMap: tex.floorArm,
-    color: 0x8a6244,
-    roughness: 0.5,
+    color: 0x5a3c26,
+    roughness: 0.62,
     metalness: 0.04,
-    envMapIntensity: 0.4,
+    envMapIntensity: 0.22,
   });
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
   floor.rotation.x = -Math.PI / 2;
@@ -575,13 +641,13 @@ function buildLivingRoom(tex, quality) {
     map: tex.wallDiff,
     normalMap: quality && quality.software ? null : tex.wallNor,
     roughnessMap: tex.wallArm,
-    color: 0xc4b09a,
-    roughness: 0.82,
+    color: 0x6a5848,
+    roughness: 0.88,
     metalness: 0.0,
-    envMapIntensity: 0.15,
+    envMapIntensity: 0.08,
   });
   const ceilMat = wallMat.clone();
-  ceilMat.color = new THREE.Color(0x8a8074);
+  ceilMat.color = new THREE.Color(0x2c2824);
 
   const back = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
   back.position.set(cx, floorY + h / 2, minZ);
@@ -625,17 +691,17 @@ function buildLivingRoom(tex, quality) {
 
   // rug
   const rug = makeRug();
-  rug.position.set(-0.15, floorY + 0.008, 2.55);
+  rug.position.set(0.35, floorY + 0.008, 2.05);
   g.add(rug);
 
   // coffee table
   const table = makeCoffeeTable(tex);
-  table.position.set(-0.15, floorY, 2.15);
+  table.position.set(0.15, floorY, 1.85);
   g.add(table);
 
   // floor lamp
   const lamp = makeFloorLamp();
-  lamp.position.set(-2.55, floorY, 3.35);
+  lamp.position.set(-2.35, floorY, 2.15);
   g.add(lamp);
 
   // plant
@@ -678,7 +744,7 @@ async function loadSofa(group, manager) {
     const scale = 2.35 / Math.max(size.x, 0.001);
     sofa.scale.setScalar(scale);
     sofa.rotation.y = Math.PI + 0.18;
-    sofa.position.set(1.85, ROOM.floorY - box.min.y * scale, 3.55);
+    sofa.position.set(2.05, ROOM.floorY - box.min.y * scale, 2.05);
     group.add(sofa);
   } catch (e) {
     console.warn("Sofa failed", e);
@@ -761,15 +827,15 @@ function makeFloorLamp() {
   g.add(base);
   const shadeMat = new THREE.MeshStandardMaterial({
     color: 0xf0d6a8,
-    emissive: 0xffc070,
-    emissiveIntensity: 0.85,
+    emissive: new THREE.Color(0xffc070),
+    emissiveIntensity: 0.9,
     roughness: 0.6,
     side: THREE.DoubleSide,
   });
   const shade = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.28, 16, 1, true), shadeMat);
   shade.position.y = 1.52;
   g.add(shade);
-  const bulb = new THREE.PointLight(0xffc070, 7.5, 6.5, 1.6);
+  const bulb = new THREE.PointLight(0xffc070, 2.4, 5.5, 1.8);
   bulb.position.set(0, 1.42, 0);
   bulb.castShadow = false;
   g.add(bulb);
@@ -890,8 +956,9 @@ function makeCabinet(tex) {
   return g;
 }
 
-function makeSand(tex) {
-  const geo = new THREE.PlaneGeometry(TANK.w - 0.06, TANK.d - 0.06, 64, 32);
+function makeSand(tex, quality) {
+  const segs = quality && (quality.software || quality.tex1k) ? 8 : 64;
+  const geo = new THREE.PlaneGeometry(TANK.w - 0.06, TANK.d - 0.06, segs, Math.max(4, (segs / 2) | 0));
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), y = pos.getY(i);
@@ -903,12 +970,10 @@ function makeSand(tex) {
     map: tex.sandDiff,
     normalMap: tex.sandNor,
     roughnessMap: tex.sandRough,
-    color: 0xa89070,
+    color: 0xd4bc8a,
     roughness: 0.88,
     metalness: 0.0,
     envMapIntensity: 0.25,
-    emissive: new THREE.Color(0x1a140c),
-    emissiveIntensity: 0.28,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;
@@ -1075,63 +1140,69 @@ function makeFrame() {
 }
 
 function makeLights(root, quality) {
-  const hemi = new THREE.HemisphereLight(0x4a5a68, 0x181008, 0.28);
+  // Proven v2 aquarium lighting: bright cool hemi + strong hood + fill,
+  // plus dimmer living-room practicals so the tank stays the dominant source.
+  const hemi = new THREE.HemisphereLight(0x7eb8c8, 0x1a120c, 0.22);
   root.add(hemi);
 
-  const hood = new THREE.SpotLight(0xffc070, 28, 7.5, Math.PI / 3.1, 0.5, 1.05);
-  hood.position.set(0, TANK.h - 0.12, 0.0);
+  const sun = new THREE.DirectionalLight(0xcfefff, 1.15);
+  sun.position.set(0.4, 4.2, 2.4);
+  sun.castShadow = !!quality.shadows;
+  if (sun.castShadow) {
+    sun.shadow.mapSize.set(quality.shadowSize, quality.shadowSize);
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 14;
+    sun.shadow.camera.left = -4;
+    sun.shadow.camera.right = 4;
+    sun.shadow.camera.top = 4;
+    sun.shadow.camera.bottom = -4;
+    sun.shadow.bias = -0.0008;
+  }
+  root.add(sun);
+
+  const hood = new THREE.SpotLight(0xd8f0ff, 38, 8, Math.PI / 3.2, 0.5, 1.05);
+  hood.position.set(0, TANK.h + 0.05, 0.1);
   hood.target.position.set(0, 0.2, 0);
-  hood.castShadow = quality.shadows;
-  hood.shadow.mapSize.set(quality.shadowSize, quality.shadowSize);
-  hood.shadow.bias = -0.00025;
-  hood.shadow.normalBias = 0.02;
-  hood.shadow.radius = 4;
-  hood.shadow.camera.near = 0.2;
-  hood.shadow.camera.far = 8;
+  hood.castShadow = !!quality.shadows && !quality.mobile && !quality.software;
   root.add(hood);
   root.add(hood.target);
 
-  const hood2 = new THREE.SpotLight(0xffe0a0, 14, 6.0, Math.PI / 4.0, 0.58, 1.1);
-  hood2.position.set(-1.1, TANK.h - 0.14, -0.15);
+  const hood2 = new THREE.SpotLight(0xffe0a0, 8, 6.0, Math.PI / 4.0, 0.6, 1.15);
+  hood2.position.set(-1.1, TANK.h + 0.04, -0.1);
   hood2.target.position.set(-0.6, 0.3, 0);
   root.add(hood2);
   root.add(hood2.target);
 
-  const hood3 = new THREE.SpotLight(0xffe0a0, 14, 6.0, Math.PI / 4.0, 0.58, 1.1);
-  hood3.position.set(1.1, TANK.h - 0.14, -0.15);
+  const hood3 = new THREE.SpotLight(0xffe0a0, 8, 6.0, Math.PI / 4.0, 0.6, 1.15);
+  hood3.position.set(1.1, TANK.h + 0.04, -0.1);
   hood3.target.position.set(0.6, 0.3, 0);
   root.add(hood3);
   root.add(hood3.target);
 
-  const fill = new THREE.PointLight(0x7ee8e0, 14, 7.0, 0.9);
-  fill.position.set(0, 1.15, 0.15);
+  const fill = new THREE.PointLight(0x7ec8d4, 2.6, 6, 1.5);
+  fill.position.set(0, 1.4, 0.2);
   root.add(fill);
 
-  const rect = new THREE.RectAreaLight(0xffd090, 12, TANK.w * 0.85, TANK.d * 0.55);
-  rect.position.set(0, TANK.h - 0.1, 0);
+  const rect = new THREE.RectAreaLight(0xffd090, quality.software ? 0 : 5, TANK.w * 0.85, TANK.d * 0.55);
+  rect.position.set(0, TANK.h - 0.08, 0);
   rect.lookAt(0, 0.4, 0);
-  root.add(rect);
+  if (!quality.software) root.add(rect);
 
-  // glow spilling into the living room
-  const spill = new THREE.SpotLight(0x5ee0d0, 18, 9.0, Math.PI / 3.2, 0.55, 1.05);
+  const spill = new THREE.SpotLight(0x5ee0d0, 14, 10.0, Math.PI / 2.8, 0.62, 1.0);
   spill.position.set(0, 1.35, 0.55);
-  spill.target.position.set(0.4, 0.2, 3.4);
-  spill.castShadow = quality.shadows && !quality.mobile && !quality.software;
-  if (spill.castShadow) {
-    spill.shadow.mapSize.set(Math.min(1024, quality.shadowSize), Math.min(1024, quality.shadowSize));
-    spill.shadow.bias = -0.0003;
-  }
+  spill.target.position.set(0.3, 0.15, 3.2);
+  spill.castShadow = false;
   root.add(spill);
   root.add(spill.target);
 
-  const roomFill = new THREE.PointLight(0xffb060, 5.5, 9, 1.4);
-  roomFill.position.set(-2.4, 1.45, 3.2);
+  const roomFill = new THREE.PointLight(0xffb060, 1.6, 7, 1.8);
+  roomFill.position.set(-2.25, 1.35, 2.15);
   root.add(roomFill);
 
-  const amb = new THREE.AmbientLight(0x2a2218, 0.22);
+  const amb = new THREE.AmbientLight(0x1a140e, 0.05);
   root.add(amb);
 
-  return { hemi, hood, hood2, hood3, fill, rect, spill, roomFill, amb };
+  return { hemi, sun, hood, hood2, hood3, fill, rect, spill, roomFill, amb };
 }
 
 function makeGodRays(n) {
@@ -1188,22 +1259,24 @@ function makeGodRays(n) {
 
 export function setDayNight(world, nightT) {
   const L = world.lights;
-  L.hemi.intensity = THREE.MathUtils.lerp(0.28, 0.12, nightT);
-  L.hood.intensity = THREE.MathUtils.lerp(28, 16, nightT);
-  L.hood2.intensity = THREE.MathUtils.lerp(14, 8, nightT);
-  L.hood3.intensity = THREE.MathUtils.lerp(14, 8, nightT);
-  L.fill.intensity = THREE.MathUtils.lerp(14, 7, nightT);
-  L.rect.intensity = THREE.MathUtils.lerp(12, 6, nightT);
-  L.spill.intensity = THREE.MathUtils.lerp(18, 9, nightT);
-  L.roomFill.intensity = THREE.MathUtils.lerp(5.5, 1.6, nightT);
+  const q = world.quality || {};
+  L.hemi.intensity = THREE.MathUtils.lerp(0.22, 0.08, nightT);
+  if (L.sun) L.sun.intensity = THREE.MathUtils.lerp(1.15, 0.2, nightT);
+  L.hood.intensity = THREE.MathUtils.lerp(38, 16, nightT);
+  L.hood.color.set(nightT > 0.5 ? 0xa8c4ff : 0xd8f0ff);
+  if (L.hood2) L.hood2.intensity = THREE.MathUtils.lerp(8, 4, nightT);
+  if (L.hood3) L.hood3.intensity = THREE.MathUtils.lerp(8, 4, nightT);
+  L.fill.intensity = THREE.MathUtils.lerp(2.6, 1.2, nightT);
+  if (L.rect) L.rect.intensity = THREE.MathUtils.lerp(q.software ? 0 : 5, 2, nightT);
+  if (L.spill) L.spill.intensity = THREE.MathUtils.lerp(14, 6, nightT);
+  if (L.roomFill) L.roomFill.intensity = THREE.MathUtils.lerp(1.6, 0.7, nightT);
   world.scene.background.copy(
-    new THREE.Color(0x05060a).lerp(new THREE.Color(0x030308), nightT)
+    new THREE.Color(0x0a0d10).lerp(new THREE.Color(0x05060a), nightT)
   );
-  world.uniforms.uWaterColor.value.set(nightT > 0.5 ? 0x021820 : 0x05384a);
+  world.uniforms.uWaterColor.value.set(nightT > 0.5 ? 0x061828 : 0x0a4e60);
   world.uniforms.uNight.value = nightT;
-  if (!world.quality.software) {
-    world.renderer.toneMappingExposure = THREE.MathUtils.lerp(1.18, 0.88, nightT);
-  }
+  const dayExp = q.exposure || 1.15;
+  world.renderer.toneMappingExposure = THREE.MathUtils.lerp(dayExp, dayExp * 0.82, nightT);
   if (world.waterSurface?.material?.uniforms?.uNight) {
     world.waterSurface.material.uniforms.uNight.value = nightT;
   }

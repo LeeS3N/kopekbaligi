@@ -91,6 +91,40 @@ button, input { font-family: inherit; }
   transition: transform .15s ease, background .2s ease, border-color .2s;
 }
 .icon-btn:hover { transform: translateY(-1px); border-color: var(--stroke-strong); background: var(--glass-2); }
+.quality-wrap {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 10px 6px 12px;
+  border-radius: 12px;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: var(--cream);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.quality-wrap select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--cream);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  padding: 2px 16px 2px 2px;
+  cursor: pointer;
+  outline: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 8px) 50%, calc(100% - 3px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.quality-wrap select option { color: #1a1a16; background: #f3efe6; }
 .icon-btn:active { transform: translateY(0) scale(0.97); }
 .hidden { display: none !important; }
 
@@ -274,7 +308,9 @@ button, input { font-family: inherit; }
 
 @media (max-width: 740px) {
   .brand h1 { font-size: 24px; gap: 6px; }
-  .meters { flex-direction: row; top: calc(70px + var(--safe-t)); }
+  .quality-wrap span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+  .toolbar { max-width: 100%; }
+  .meters { flex-direction: row; top: calc(108px + var(--safe-t)); }
   .card { width: calc(50% - 6px); padding: 9px 10px 10px; border-radius: 14px; }
   .who { font-size: 16px; }
   .card label { margin: 4px 0 2px; }
@@ -285,6 +321,7 @@ button, input { font-family: inherit; }
 }
 @media (max-width: 420px) {
   .toolbar .icon-btn { width: 36px; height: 36px; }
+  .quality-wrap { padding: 4px 8px; font-size: 11px; }
   .hint { display: none; }
 }
 @media (max-height: 500px) and (orientation: landscape) {

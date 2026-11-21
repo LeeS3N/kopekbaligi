@@ -206,8 +206,9 @@ export function createGame(world, gltf) {
   // invisible volume for raycast
   const volume = new THREE.Mesh(
     new THREE.BoxGeometry(TANK.w - 0.08, TANK.water - TANK.sand, TANK.d - 0.08),
-    new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
   );
+  volume.visible = false;
   volume.position.set(0, (TANK.water + TANK.sand) / 2, 0);
   world.scene.add(volume);
 

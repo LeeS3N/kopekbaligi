@@ -12,6 +12,8 @@ ilerleme bu cihazda saklanır.
 
 Three.js (yerelde paketlenen WebGL) ile çalışır; kurulum gerekmez.
 
-Sinematik v3: ev oturma odasında büyük bir resif akvaryumu, siyah yüzgeçli / beyaz yüzgeçli resif köpekbalıkları (Kaptan ve İnci), mercan ve mercan balıkları, HDRI yansımaları ve masaüstü için yüksek kaliteli ışık/post-işleme. Mobilde daha hafif bir yol kullanılır.
+Sinematik v3: ev oturma odasında büyük bir resif akvaryumu, siyah yüzgeçli / beyaz yüzgeçli resif köpekbalıkları (Kaptan ve İnci), mercan ve mercan balıkları, HDRI yansımaları ve masaüstü için yüksek kaliteli ışık/post-işleme.
+
+Görüntü kalitesi araç çubuğundaki **Kalite** menüsünden değişir (Ultra / Yüksek / Orta). Masaüstünde varsayılan Otomatik = Ultra; telefonda ve yazılım renderersında (SwiftShader, llvmpipe) Orta yol kullanılır. Adres çubuğundan da seçilebilir: `?q=ultra`, `?q=high`, `?q=medium`, ayrıca `?nopost`, `?nogtao`, `?nodof`, `?notrans`, `?nobloom`.
 
 Lisans ve kaynaklar için `CREDITS.md` dosyasına bak.
