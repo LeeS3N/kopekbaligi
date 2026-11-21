@@ -50,7 +50,7 @@ const PRESETS = {
   },
   medium: {
     bloom: false, shadows: false, shadowSize: 512, bubbles: 50, fish: 22, kelp: 8,
-    snow: 220, godrays: 4, transmission: false, gtao: false, dof: false, smaa: false,
+    snow: 220, godrays: 7, transmission: false, gtao: false, dof: false, smaa: false,
     fxaa: false, post: true, tex1k: true, simpleWater: true, simpleGlass: true,
     hdri: false, hdriPath: "./hdri/fireplace_1k.hdr", grade: false, exposure: 1.18, tone: "aces",
   },
@@ -235,7 +235,7 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
     shader.uniforms.uFogDensity = uniforms.uFogDensity;
     if (uniforms.uCausticColor) shader.uniforms.uCausticColor = uniforms.uCausticColor;
     if (hooks.uniforms) Object.assign(shader.uniforms, hooks.uniforms);
-    if (!shader.uniforms.uCauGain) shader.uniforms.uCauGain = hooks.uniforms?.uCauGain || { value: 1.0 };
+    if (!shader.uniforms.uCauGain) shader.uniforms.uCauGain = hooks.uniforms?.uCauGain || { value: 1.45 };
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -265,7 +265,7 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
         float c = caustic(vWorldPos.xz);
         float up = clamp(dot(normalize(normal), vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
         vec3 cauCol = vec3(0.55, 0.95, 0.92);
-        outgoingLight += cauCol * (0.28 + 1.15 * c) * up * mix(1.0, 0.28, uNight) * (1.0 - absorb * 0.35) * uCauGain;
+        outgoingLight += cauCol * (0.12 + 1.85 * c) * up * mix(1.0, 0.28, uNight) * (1.0 - absorb * 0.32) * uCauGain;
         ${hooks.fragmentExtra || ""}
         }
         #include <opaque_fragment>`
@@ -354,8 +354,8 @@ export async function createWorld(canvas, quality, manager) {
   const uniforms = {
     uTime: { value: 0 },
     uNight: { value: 0 },
-    uWaterColor: { value: new THREE.Color(0x0a4e60) },
-    uFogDensity: { value: 0.14 },
+    uWaterColor: { value: new THREE.Color(0x0a4a5c) },
+    uFogDensity: { value: 0.16 },
     uCausticColor: { value: new THREE.Color(0x5ef0d8) },
     uWaterLevel: { value: TANK.water },
   };
@@ -426,6 +426,10 @@ export async function createWorld(canvas, quality, manager) {
 
   const waterSurface = quality.simpleWater ? makeSimpleWater() : makeWaterSurface();
   root.add(waterSurface);
+  const frontShimmer = makeFrontShimmer();
+  root.add(frontShimmer);
+  const floorGlow = makeFloorSpillGlow();
+  root.add(floorGlow);
 
   const glass = makeGlass(quality);
   root.add(glass);
@@ -487,7 +491,7 @@ export async function createWorld(canvas, quality, manager) {
 
   return {
     scene, camera, renderer, composer, controls, labels,
-    root, interior, decorations, waterSurface, rays, lights,
+    root, interior, decorations, waterSurface, frontShimmer, rays, lights,
     uniforms, quality, room,
     lastInteract: () => lastInteract,
   };
@@ -986,16 +990,57 @@ function makeSand(tex, quality) {
 
 
 function makeSimpleWater() {
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x1a6a78,
-    roughness: 0.15,
-    metalness: 0.05,
+  return makeShimmerSurface(true);
+}
+
+function makeShimmerSurface(simple) {
+  const mat = new THREE.ShaderMaterial({
     transparent: true,
-    opacity: 0.28,
-    envMapIntensity: 0.5,
     depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: { uTime: { value: 0 }, uNight: { value: 0 } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv; varying vec3 vW; varying vec3 vView;
+      uniform float uTime;
+      void main() {
+        vUv = uv;
+        vec3 p = position;
+        p.z += sin(p.x * 3.2 + uTime * 1.05) * 0.007 + cos(p.y * 3.8 + uTime * 0.8) * 0.005;
+        vec4 wp = modelMatrix * vec4(p, 1.0);
+        vW = wp.xyz;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        vView = mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv; varying vec3 vW; varying vec3 vView;
+      uniform float uTime, uNight;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float noise(vec2 p){
+        vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y);
+      }
+      void main() {
+        vec3 N = normalize(vec3(
+          sin(vW.x * 6.0 + uTime * 1.2) * 0.15,
+          1.0,
+          cos(vW.z * 6.5 + uTime * 0.9) * 0.15
+        ));
+        vec3 V = normalize(-vView);
+        float fres = pow(1.0 - clamp(dot(N, vec3(0.0, 1.0, 0.0) /* view-ish */), 0.0, 1.0), 2.2);
+        float glance = pow(1.0 - abs(V.z), 1.6);
+        float spark = noise(vW.xz * 4.5 + vec2(uTime * 0.22, -uTime * 0.13));
+        spark *= noise(vW.xz * 8.0 + vec2(-uTime * 0.18, uTime * 0.1));
+        spark = pow(clamp(spark * 1.4, 0.0, 1.0), 3.0);
+        vec3 teal = vec3(0.18, 0.55, 0.58);
+        vec3 hi = vec3(0.75, 0.95, 0.92);
+        vec3 col = mix(teal, hi, spark * 0.7 + fres * 0.35 + glance * 0.25);
+        float a = mix(0.22, 0.12, uNight) + spark * 0.28 + fres * 0.2 + glance * 0.15;
+        gl_FragColor = vec4(col, clamp(a, 0.0, 0.7));
+      }`,
   });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(TANK.w - 0.08, TANK.d - 0.08), mat);
+  const segs = simple ? 12 : 48;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(TANK.w - 0.08, TANK.d - 0.08, segs, Math.max(6, (segs / 2) | 0)), mat);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = TANK.water - 0.01;
   mesh.renderOrder = 2;
@@ -1053,6 +1098,65 @@ function makeWaterSurface() {
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = TANK.water - 0.01;
   mesh.renderOrder = 2;
+  return mesh;
+}
+
+
+function makeFrontShimmer() {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    uniforms: { uTime: { value: 0 }, uNight: { value: 0 } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv; varying vec3 vW;
+      void main() {
+        vUv = uv;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vW = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv; varying vec3 vW;
+      uniform float uTime, uNight;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float noise(vec2 p){
+        vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y);
+      }
+      void main() {
+        float c = noise(vec2(vW.x * 2.4, vW.y * 1.8) + vec2(uTime * 0.2, 0.0));
+        c *= noise(vec2(vW.x * 4.1 + uTime * -0.14, vW.y * 3.2));
+        float spark = pow(clamp(c * 1.5, 0.0, 1.0), 3.2);
+        float fade = smoothstep(0.0, 0.1, vUv.y) * smoothstep(1.0, 0.82, vUv.y) * 0.55 + 0.45;
+        float a = spark * mix(0.32, 0.12, uNight) * fade;
+        gl_FragColor = vec4(vec3(0.45, 0.95, 0.88) * a, a);
+      }`,
+  });
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(TANK.w - 0.12, TANK.water - TANK.sand - 0.04),
+    mat
+  );
+  mesh.position.set(0, (TANK.water + TANK.sand) / 2, TANK.d / 2 - 0.07);
+  mesh.renderOrder = 2;
+  mesh.userData.shimmer = true;
+  return mesh;
+}
+
+function makeFloorSpillGlow() {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x4ee0d0,
+    transparent: true,
+    opacity: 0.2,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.4), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(0.15, ROOM.floorY + 0.012, 1.65);
+  mesh.renderOrder = 1;
   return mesh;
 }
 
@@ -1190,7 +1294,7 @@ function makeLights(root, quality) {
   rect.lookAt(0, 0.4, 0);
   if (!quality.software) root.add(rect);
 
-  const spill = new THREE.SpotLight(0x5ee0d0, 14, 10.0, Math.PI / 2.8, 0.62, 1.0);
+  const spill = new THREE.SpotLight(0x5ee0d0, 22, 11.0, Math.PI / 2.4, 0.7, 1.0);
   spill.position.set(0, 1.35, 0.55);
   spill.target.position.set(0.3, 0.15, 3.2);
   spill.castShadow = false;
@@ -1239,7 +1343,7 @@ function makeGodRays(n) {
         float bands = 0.55 + 0.45 * noise(vec2(vUv.x * 18.0, uTime * 0.15));
         float flicker = 0.75 + 0.25 * sin(uTime * 1.3 + vUv.x * 20.0);
         float fall = pow(1.0 - vUv.y, 1.15);
-        float a = shaft * bands * flicker * fall * mix(0.42, 0.18, uNight);
+        float a = shaft * bands * flicker * fall * mix(0.85, 0.32, uNight);
         vec3 teal = vec3(0.28, 0.92, 0.82);
         vec3 warm = vec3(1.0, 0.78, 0.42);
         vec3 col = mix(teal, warm, smoothstep(0.7, 1.0, 1.0 - vUv.y) * 0.55);
@@ -1248,10 +1352,10 @@ function makeGodRays(n) {
     `,
   });
   for (let i = 0; i < n; i++) {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.38, TANK.water - 0.05), mat);
-    const x = -1.7 + (i / Math.max(1, n - 1)) * 3.4;
-    mesh.position.set(x, TANK.water / 2, (i % 2 === 0 ? 0.18 : -0.22));
-    mesh.rotation.y = (i % 2 === 0 ? 0.15 : -0.12);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, TANK.water - 0.04), mat);
+    const x = -1.75 + (i / Math.max(1, n - 1)) * 3.5;
+    mesh.position.set(x, TANK.water / 2 + 0.02, (i % 2 === 0 ? 0.32 : 0.08));
+    mesh.rotation.y = (i % 2 === 0 ? 0.06 : -0.05);
     mesh.renderOrder = 1;
     group.add(mesh);
   }
@@ -1270,7 +1374,7 @@ export function setDayNight(world, nightT) {
   if (L.hood3) L.hood3.intensity = THREE.MathUtils.lerp(8, 4, nightT);
   L.fill.intensity = THREE.MathUtils.lerp(2.6, 1.2, nightT);
   if (L.rect) L.rect.intensity = THREE.MathUtils.lerp(q.software ? 0 : 5, 2, nightT);
-  if (L.spill) L.spill.intensity = THREE.MathUtils.lerp(14, 6, nightT);
+  if (L.spill) L.spill.intensity = THREE.MathUtils.lerp(22, 8, nightT);
   if (L.roomFill) L.roomFill.intensity = THREE.MathUtils.lerp(1.6, 0.7, nightT);
   world.scene.background.copy(
     new THREE.Color(0x0a0d10).lerp(new THREE.Color(0x05060a), nightT)
@@ -1281,6 +1385,9 @@ export function setDayNight(world, nightT) {
   world.renderer.toneMappingExposure = THREE.MathUtils.lerp(dayExp, dayExp * 0.82, nightT);
   if (world.waterSurface?.material?.uniforms?.uNight) {
     world.waterSurface.material.uniforms.uNight.value = nightT;
+  }
+  if (world.frontShimmer?.material?.uniforms?.uNight) {
+    world.frontShimmer.material.uniforms.uNight.value = nightT;
   }
   if (world.rays?.userData?.mat) {
     world.rays.userData.mat.uniforms.uNight.value = nightT;
@@ -1302,6 +1409,9 @@ export function updateWorldTime(world, t, nightT) {
   world.uniforms.uTime.value = t;
   if (world.waterSurface?.material?.uniforms?.uTime) {
     world.waterSurface.material.uniforms.uTime.value = t;
+  }
+  if (world.frontShimmer?.material?.uniforms?.uTime) {
+    world.frontShimmer.material.uniforms.uTime.value = t;
   }
   if (world.rays?.userData?.mat) {
     world.rays.userData.mat.uniforms.uTime.value = t;
