@@ -1049,6 +1049,351 @@ function speciesGeo(spec) {
   return geo;
 }
 
+/* -------------------- painted sculpted reef fish (smooth + textures) -------------------- */
+const FISH_SWIM_VERT = `
+  float along = clamp(aAlong, 0.0, 1.0);
+  float tail = pow(smoothstep(0.15, 1.0, along), 1.15);
+  float wag = sin(uTime * 6.2 + along * 3.8 + uPhase);
+  transformed.z += wag * uAmp * tail * 0.55;
+  transformed.x += wag * uAmp * tail * 0.02;
+  float pec = smoothstep(0.18, 0.40, along) * (1.0 - smoothstep(0.48, 0.70, along));
+  transformed.y += sin(uTime * 7.0 + uPhase) * pec * uAmp * 0.08;
+`;
+
+function addFishAlong(geo) {
+  const pos = geo.attributes.position;
+  let minX = Infinity, maxX = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+  }
+  const span = Math.max(1e-4, maxX - minX);
+  const along = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) along[i] = (maxX - pos.getX(i)) / span; // 0 head, 1 tail
+  geo.setAttribute("aAlong", new THREE.BufferAttribute(along, 1));
+}
+
+function sideUv(geo) {
+  const pos = geo.attributes.position;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i);
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const sx = Math.max(1e-4, maxX - minX), sy = Math.max(1e-4, maxY - minY);
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = (maxX - pos.getX(i)) / sx; // 0 at head
+    uv[i * 2 + 1] = (pos.getY(i) - minY) / sy;
+  }
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+}
+
+function sculptBody(sx, sy, sz, segs) {
+  const geo = new THREE.SphereGeometry(1, segs, Math.max(16, (segs * 0.7) | 0));
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    // head at +X, tail at -X
+    const t = (x + 1) * 0.5; // 0 tail, 1 head
+    const taper = 0.28 + 0.72 * Math.sin(Math.pow(Math.max(0, t), 0.85) * Math.PI);
+    const snout = t > 0.82 ? 1 + (t - 0.82) * 1.6 : 1;
+    x *= sx * snout;
+    y *= sy * taper;
+    z *= sz * taper * (0.85 + 0.15 * t);
+    if (t > 0.9) y *= 0.78; // slightly pointed snout
+    if (t < 0.12) { y *= 0.55; z *= 0.45; } // slim caudal peduncle
+    pos.setXYZ(i, x, y, z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function finPlane(w, h, segsX, segsY, thick = 0.018) {
+  // Stay in the XY plane (body is flattened in Z) so fins read in side profile.
+  return new THREE.PlaneGeometry(w, h, segsX, segsY);
+}
+
+function finFromShape(points, thick = 0.012) {
+  const shape = new THREE.Shape();
+  shape.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) shape.lineTo(points[i][0], points[i][1]);
+  shape.closePath();
+  const g = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: false, steps: 1, curveSegments: 1 });
+  g.translate(0, 0, -thick * 0.5);
+  g.computeVertexNormals();
+  return g;
+}
+
+function paintFishTex(id) {
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 256;
+  const ctx = c.getContext("2d");
+  const w = 512, h = 256;
+  const fill = (color) => { ctx.fillStyle = color; ctx.fillRect(0, 0, w, h); };
+  const band = (u, width, color) => {
+    ctx.fillStyle = color;
+    ctx.fillRect((u - width * 0.5) * w, 0, width * w, h);
+  };
+  const ellipse = (u, v, ru, rv, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(u * w, (1 - v) * h, ru * w, rv * h, 0, 0, 6.28);
+    ctx.fill();
+  };
+  const scales = (alpha = 0.1) => {
+    ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+    ctx.lineWidth = 0.8;
+    for (let y = 8; y < h; y += 10) {
+      for (let x = 8; x < w; x += 12) {
+        ctx.beginPath();
+        ctx.arc(x + (y % 20 === 0 ? 6 : 0), y, 5, 0.15, Math.PI - 0.15);
+        ctx.stroke();
+      }
+    }
+  };
+  if (id === "clown") {
+    const grd = ctx.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, "#d24e08"); grd.addColorStop(0.45, "#f07818"); grd.addColorStop(1, "#f4b06a");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    const bands = [0.16, 0.48, 0.80];
+    for (const u of bands) {
+      band(u, 0.15, "#1a120c");
+      band(u, 0.105, "#f6f1e4");
+    }
+    scales(0.07);
+  } else if (id === "bluetang") {
+    const grd = ctx.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, "#163a9a"); grd.addColorStop(0.45, "#1f5ad6"); grd.addColorStop(1, "#6aa0e8");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#f0d024";
+    ctx.fillRect(w * 0.72, 0, w * 0.28, h);
+    ctx.fillStyle = "#101418";
+    ctx.beginPath();
+    ctx.moveTo(w * 0.62, h * 0.18); ctx.lineTo(w * 0.78, h * 0.08); ctx.lineTo(w * 0.8, h * 0.92); ctx.lineTo(w * 0.62, h * 0.82);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#f0d024";
+    ctx.fillRect(w * 0.76, 0, w * 0.24, h);
+    scales(0.12);
+  } else if (id === "tang") {
+    const grd = ctx.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, "#e0a808"); grd.addColorStop(0.45, "#f5d02a"); grd.addColorStop(1, "#f8e6a0");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(180,120,10,0.25)";
+    ctx.fillRect(0, 0, w * 0.16, h);
+    ctx.fillStyle = "#f7f4e6";
+    ctx.fillRect(w * 0.90, h * 0.42, w * 0.10, h * 0.16);
+    scales(0.11);
+  } else if (id === "butterfly") {
+    const grd = ctx.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, "#e8b82a"); grd.addColorStop(1, "#f6e08a");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    band(0.16, 0.1, "#1a1410");
+    ellipse(0.82, 0.45, 0.055, 0.12, "#1a1410");
+    ellipse(0.82, 0.45, 0.028, 0.06, "#e8c84a");
+    ellipse(0.82, 0.45, 0.014, 0.03, "#1a1410");
+    scales(0.08);
+  } else if (id === "moorish") {
+    fill("#f2d44a");
+    band(0.12, 0.14, "#f7f2de");
+    band(0.28, 0.16, "#161616");
+    band(0.48, 0.16, "#f7f2de");
+    band(0.68, 0.18, "#161616");
+    ctx.fillStyle = "#f2d44a";
+    ctx.fillRect(w * 0.82, 0, w * 0.18, h);
+  } else if (id === "parrot") {
+    const grd = ctx.createLinearGradient(0, 0, w, 0);
+    grd.addColorStop(0, "#3caa6a"); grd.addColorStop(0.4, "#2a7ad0"); grd.addColorStop(0.75, "#d45a8a"); grd.addColorStop(1, "#e8a040");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    scales(0.14);
+  } else if (id === "cardinal") {
+    const grd = ctx.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, "#8a1518"); grd.addColorStop(0.55, "#c42830"); grd.addColorStop(1, "#f0c8b0");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    ellipse(0.12, 0.55, 0.08, 0.16, "#1a1010");
+    scales(0.08);
+  } else if (id === "mandarin") {
+    fill("#1e4a8a");
+    ctx.fillStyle = "#2a8a6a";
+    for (let i = 0; i < 18; i++) ellipse(0.1 + Math.random() * 0.8, 0.15 + Math.random() * 0.7, 0.08, 0.1, i % 2 ? "#2a8a6a" : "#1e4a8a");
+    ctx.strokeStyle = "#f0a020"; ctx.lineWidth = 5; ctx.lineJoin = "round";
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo((0.1 + i * 0.11) * w, h * 0.2);
+      ctx.bezierCurveTo((0.2 + i * 0.11) * w, h * 0.5, (0.05 + i * 0.11) * w, h * 0.6, (0.18 + i * 0.11) * w, h * 0.85);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#e8d060";
+    for (let i = 0; i < 20; i++) ellipse(Math.random(), Math.random(), 0.015, 0.03, "#e8d060");
+  } else {
+    fill("#3a7ac8");
+    scales(0.1);
+  }
+  // belly lightening
+  const belly = ctx.createLinearGradient(0, h * 0.55, 0, h);
+  belly.addColorStop(0, "rgba(255,255,255,0)");
+  belly.addColorStop(1, "rgba(255,255,255,0.28)");
+  ctx.fillStyle = belly; ctx.fillRect(0, 0, w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const FISH_SHAPE = {
+  bluetang:  { sx: 1.00, sy: 0.82, sz: 0.14, segs: 36, dorsal: [-0.02, 0.58, 0.42, 0.16] },
+  tang:      { sx: 0.92, sy: 0.92, sz: 0.13, segs: 36, dorsal: [-0.06, 0.78, 0.38, 0.28] },
+  butterfly: { sx: 0.92, sy: 0.86, sz: 0.13, segs: 36, dorsal: [0.00, 0.50, 0.36, 0.12] },
+  moorish:   { sx: 1.05, sy: 0.88, sz: 0.12, segs: 36, dorsal: [0.10, 0.95, 0.28, 0.55] },
+  parrot:    { sx: 1.15, sy: 0.62, sz: 0.22, segs: 32, dorsal: [0.08, 0.32, 0.32, 0.10] },
+  cardinal:  { sx: 0.95, sy: 0.44, sz: 0.16, segs: 28, dorsal: [0.08, 0.18, 0.20, 0.08] },
+  mandarin:  { sx: 0.84, sy: 0.54, sz: 0.20, segs: 28, dorsal: [0.08, 0.24, 0.22, 0.10] },
+  clown:     { sx: 0.92, sy: 0.58, sz: 0.22, segs: 32, dorsal: [0.06, 0.28, 0.28, 0.10] },
+};
+
+function makeEyeMaterial(uniforms) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x07080b,
+    roughness: 0.16,
+    metalness: 0.04,
+    envMapIntensity: 0.7,
+    flatShading: false,
+  });
+  applyUnderwater(mat, uniforms, {
+    key: "painted-eye",
+    uniforms: { uCauGain: { value: 0.08 } },
+    fragmentExtra: `
+      float spec = pow(max(0.0, dot(normalize(normal), normalize(vec3(0.2, 0.55, 0.8)))), 96.0);
+      outgoingLight += vec3(1.0, 1.0, 1.0) * spec * 0.9;
+    `,
+  });
+  return mat;
+}
+
+function spawnPaintedFish(spec, uniforms, length, phase) {
+  const id = spec.id;
+  const sh = FISH_SHAPE[id] || FISH_SHAPE.clown;
+  const group = new THREE.Group();
+  const swimU = {
+    uAmp: { value: 0.12 },
+    uPhase: { value: phase || 0 },
+  };
+  const bodyGeo = sculptBody(sh.sx, sh.sy, sh.sz, sh.segs);
+  const [dx, dh, dw, doff] = sh.dorsal;
+  const back = sh.sy * 0.42;
+  // triangular / swept dorsal sail
+  const dorsal = finFromShape([
+    [dx + dw * 0.45, back],
+    [dx - dw * 0.20, back],
+    [dx - dw * 0.35 - doff * 0.9, back + dh],
+    [dx + dw * 0.05 - doff * 0.35, back + dh * 0.72],
+  ], 0.012);
+  // forked caudal fin
+  const th = sh.sy * 0.58;
+  const tail = finFromShape([
+    [-sh.sx * 0.72,  0.06],
+    [-sh.sx * 0.88,  th],
+    [-sh.sx * 1.18,  th * 0.92],
+    [-sh.sx * 0.86,  0.00],
+    [-sh.sx * 1.18, -th * 0.92],
+    [-sh.sx * 0.88, -th],
+    [-sh.sx * 0.72, -0.06],
+  ], 0.012);
+  // anal fin
+  const anal = finFromShape([
+    [-0.02, -sh.sy * 0.40],
+    [-dw * 0.25, -sh.sy * 0.40],
+    [-dw * 0.15 - 0.08, -sh.sy * 0.40 - Math.min(dh * 0.38, sh.sy * 0.36)],
+    [0.04, -sh.sy * 0.42],
+  ], 0.01);
+  // pectorals, slightly flared in Z
+  const pecs = [];
+  for (const s of [-1, 1]) {
+    const pec = finFromShape([
+      [0.00,  0.05],
+      [-0.16,  0.07],
+      [-0.20, -0.02],
+      [-0.04, -0.06],
+    ], 0.008);
+    pec.rotateY(s * 0.65);
+    pec.rotateZ(-0.15);
+    pec.translate(sh.sx * 0.16, -sh.sy * 0.06, s * (sh.sz * 0.55 + 0.03));
+    pecs.push(pec);
+  }
+  const parts = [bodyGeo, dorsal, tail, anal, ...pecs].map((g) => (g.index ? g.toNonIndexed() : g));
+  const bodyMerged = mergeGeometries(parts, false);
+  if (!bodyMerged) throw new Error("painted-fish merge failed");
+  bodyMerged.computeVertexNormals();
+  sideUv(bodyMerged);
+  addFishAlong(bodyMerged);
+
+  const tex = paintFishTex(id);
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    roughness: 0.42,
+    metalness: 0.04,
+    envMapIntensity: 0.55,
+    flatShading: false,
+    side: THREE.DoubleSide,
+  });
+  const irid = (typeof FISH_IRID !== "undefined" && FISH_IRID[id]) ? FISH_IRID[id] : "vec3(0.5, 0.8, 0.95)";
+  applyUnderwater(mat, uniforms, {
+    key: "painted-body-" + id,
+    uniforms: {
+      uAmp: swimU.uAmp,
+      uPhase: swimU.uPhase,
+      uCauGain: { value: 0.4 },
+    },
+    vertexCommon: "attribute float aAlong; uniform float uAmp; uniform float uPhase; uniform float uTime;",
+    vertexBend: FISH_SWIM_VERT,
+    fragmentExtra: `
+      vec3 wN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+      vec3 V = normalize(cameraPosition - vWorldPos);
+      float fres = pow(1.0 - abs(dot(wN, V)), 2.6);
+      float lift = clamp(wN.y * 0.5 + 0.5, 0.0, 1.0);
+      outgoingLight *= mix(vec3(1.10, 1.08, 0.96), vec3(1.0), lift);
+      outgoingLight += (${irid}) * fres * 0.22;
+    `,
+  });
+  const body = new THREE.Mesh(bodyMerged, mat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  // solid eyes (separate spheres, no fresnel rim)
+  const eyeMat = makeEyeMaterial(uniforms);
+  const eyeGeo = new THREE.SphereGeometry(0.048 * Math.min(1.15, sh.sy / 0.6), 20, 16);
+  const eyeX = sh.sx * 0.68;
+  const eyeY = sh.sy * 0.10;
+  const eyeZ = sh.sz * 0.95;
+  for (const s of [-1, 1]) {
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(eyeX, eyeY, s * eyeZ);
+    eye.castShadow = false;
+    group.add(eye);
+  }
+
+  // normalize length along X
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const scale = length / Math.max(size.x, 0.001);
+  const wrap = new THREE.Group();
+  const inner = new THREE.Group();
+  inner.add(group);
+  const center = box.getCenter(new THREE.Vector3());
+  inner.position.sub(center);
+  wrap.add(inner);
+  wrap.scale.setScalar(scale);
+  wrap.userData.swim = swimU;
+  wrap.frustumCulled = false;
+  return { wrap, mixer: null };
+}
+
+
 const REEF_SCHOOLS = [
   { id: "bluetang",  len: 0.20, n: [6, 3], spread: 0.75, base: { cx: -0.95, cy: 0.95, cz: -0.10 } },
   { id: "tang",      len: 0.17, n: [5, 3], spread: 0.70, base: { cx:  1.05, cy: 1.15, cz:  0.15 } },
@@ -1092,17 +1437,9 @@ function styleReefFish(root, uniforms, key) {
     o.frustumCulled = false;
     const src = o.material;
     const list = Array.isArray(src) ? src : src ? [src] : [];
-    const allEyes = list.length && list.every((m) => /eye/i.test(m?.name || o.name || ""));
     if (o.geometry) {
-      o.geometry = smoothGeometry(o.geometry.clone(), allEyes ? 0 : 1);
-    }
-    if (allEyes && o.geometry) {
-      o.geometry.computeBoundingBox();
-      const c = o.geometry.boundingBox.getCenter(new THREE.Vector3());
-      o.geometry.translate(-c.x, -c.y, -c.z);
-      o.geometry.scale(0.58, 0.58, 0.58);
-      o.geometry.translate(c.x, c.y, c.z);
-      o.geometry.computeVertexNormals();
+      // lightly smooth only — no subdivision (that melted the skinned meshes)
+      o.geometry = smoothGeometry(o.geometry.clone(), 0);
     }
     const out = list.map((m) => {
       const mat = m.clone();
@@ -1114,17 +1451,16 @@ function styleReefFish(root, uniforms, key) {
         mat.roughness = 0.1;
         mat.metalness = 0.28;
         mat.envMapIntensity = 1.35;
+        mat.color.set(0x07080b);
+        mat.roughness = 0.16;
+        mat.metalness = 0.04;
+        mat.envMapIntensity = 0.7;
         applyUnderwater(mat, uniforms, {
           key: "reef-eye-" + key,
-          uniforms: { uCauGain: { value: 0.15 } },
+          uniforms: { uCauGain: { value: 0.08 } },
           fragmentExtra: `
-            vec3 wN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-            vec3 V = normalize(cameraPosition - vWorldPos);
-            float spec = pow(clamp(dot(wN, normalize(V + normalize(vec3(0.25, 0.85, 0.4)))), 0.0, 1.0), 72.0);
-            float fres = pow(1.0 - abs(dot(wN, V)), 3.0);
-            outgoingLight = mix(outgoingLight, vec3(0.10, 0.08, 0.07), 0.2);
-            outgoingLight += vec3(0.95, 0.97, 1.0) * spec * 1.15;
-            outgoingLight += vec3(0.18, 0.22, 0.28) * fres * 0.45;
+            float spec = pow(max(0.0, dot(normalize(normal), normalize(vec3(0.2, 0.55, 0.8)))), 96.0);
+            outgoingLight += vec3(1.0) * spec * 0.9;
           `,
         });
       } else {
@@ -1173,9 +1509,34 @@ export function createFishSchool(quality, uniforms) {
   const group = new THREE.Group();
   const schools = [];
   const light = !!(quality.mobile || quality.software || quality.tex1k);
+  const usePainted = true;
   const hasReef = REEF_SCHOOLS.some((s) => CACHE.fish[s.id]);
 
-  if (hasReef) {
+  if (usePainted) {
+    for (const spec of REEF_SCHOOLS) {
+      const n = light ? spec.n[1] : spec.n[0];
+      const members = [];
+      for (let i = 0; i < n; i++) {
+        const scale = 0.86 + Math.random() * 0.28;
+        const phase = Math.random() * 6.28;
+        const spawned = spawnPaintedFish(spec, uniforms, spec.len * scale, phase);
+        group.add(spawned.wrap);
+        members.push({
+          x: spec.base.cx + (Math.random() - 0.5) * spec.spread,
+          y: spec.base.cy + (Math.random() - 0.5) * 0.32,
+          z: spec.base.cz + (Math.random() - 0.5) * 0.42,
+          vx: (Math.random() - 0.5) * 0.18,
+          vy: 0,
+          vz: (Math.random() - 0.5) * 0.18,
+          phase,
+          scale,
+          object: spawned.wrap,
+          mixer: null,
+        });
+      }
+      schools.push({ inst: null, members, objects: true, id: spec.id });
+    }
+  } else if (hasReef) {
     for (const spec of REEF_SCHOOLS) {
       const gltf = CACHE.fish[spec.id];
       if (!gltf?.scene) continue;
@@ -1241,8 +1602,8 @@ export function createFishSchool(quality, uniforms) {
     }
   }
 
-  // Orange Gaitkit clownfish near the anemone (distinct from the zebra clown)
-  if (CACHE.fish.gaitkitClown) {
+  // Gaitkit clowns skipped when painted schools already include clowns near the anemone
+  if (!usePainted && CACHE.fish.gaitkitClown) {
     const n = light ? 2 : 3;
     const members = [];
     for (let i = 0; i < n; i++) {
@@ -1276,6 +1637,7 @@ export function createFishSchool(quality, uniforms) {
 }
 
 export function updateFish(schools, sharks, dt) {
+  if (typeof window !== "undefined" && window.__freezeFish) return;
   const b = tankBounds();
   const dummy = new THREE.Object3D();
   const now = performance.now();
@@ -1331,6 +1693,8 @@ export function updateFish(schools, sharks, dt) {
           f.mixer.timeScale = 0.8 + Math.min(sp, 0.55) * 1.4;
           f.mixer.update(dt);
         }
+        const swim = f.object.userData && f.object.userData.swim;
+        if (swim && swim.uAmp) swim.uAmp.value = 0.09 + Math.min(sp, 0.55) * 0.16;
       } else if (school.inst) {
         dummy.position.set(f.x, f.y, f.z);
         dummy.lookAt(f.x + f.vx, f.y + f.vy, f.z + f.vz);

@@ -404,9 +404,9 @@ export async function createWorld(canvas, quality, manager) {
       outgoingLight *= mix(vec3(0.70, 0.68, 0.58), vec3(1.10, 1.08, 0.92), vein);
       outgoingLight += vec3(0.50, 0.62, 0.42) * pow(c2, 1.6) * 0.16;
       // front of the tank ( +z ) was blowing out under the hood
-      float front = smoothstep(0.05, 0.82, vWorldPos.z);
-      outgoingLight *= mix(vec3(1.0), vec3(0.62, 0.55, 0.42), front * 0.62);
-      outgoingLight = min(outgoingLight, vec3(0.82, 0.72, 0.52) * mix(1.15, 0.85, front));
+      float front = smoothstep(-0.05, 0.85, vWorldPos.z);
+      outgoingLight *= mix(vec3(1.0), vec3(0.55, 0.48, 0.36), front * 0.72);
+      outgoingLight = min(outgoingLight, vec3(0.78, 0.68, 0.48) * mix(1.12, 0.78, front));
     `,
   });
   root.add(sand);
