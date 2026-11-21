@@ -323,9 +323,9 @@ export async function createWorld(canvas, quality, manager) {
   scene.background = new THREE.Color(0x0a0808);
   scene.fog = null;
 
-  const camera = new THREE.PerspectiveCamera(quality.mobile ? 52 : 42, 1, 0.1, 60);
-  camera.position.set(1.55, 1.42, 5.65);
-  camera.lookAt(0.0, 0.68, 0.2);
+  const camera = new THREE.PerspectiveCamera(quality.mobile ? 54 : 44, 1, 0.1, 60);
+  camera.position.set(1.85, 1.36, 5.45);
+  camera.lookAt(0.05, 0.62, 0.2);
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -433,6 +433,7 @@ export async function createWorld(canvas, quality, manager) {
 
   const glass = makeGlass(quality);
   root.add(glass);
+  root.add(makeFrontGlassFresnel());
 
   const frame = makeFrame();
   root.add(frame);
@@ -444,7 +445,7 @@ export async function createWorld(canvas, quality, manager) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
-  controls.target.set(0.0, 0.68, 0.2);
+  controls.target.set(0.05, 0.62, 0.2);
   controls.minDistance = 1.35;
   controls.maxDistance = 8.0;
   controls.minPolarAngle = 0.78;
@@ -697,12 +698,12 @@ function buildLivingRoom(tex, quality) {
 
   // rug
   const rug = makeRug();
-  rug.position.set(0.35, floorY + 0.008, 2.05);
+  rug.position.set(0.55, floorY + 0.008, 1.55);
   g.add(rug);
 
   // coffee table
   const table = makeCoffeeTable(tex);
-  table.position.set(0.15, floorY, 1.85);
+  table.position.set(0.45, floorY, 1.45);
   g.add(table);
 
   // floor lamp
@@ -747,10 +748,10 @@ async function loadSofa(group, manager) {
     sofa.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(sofa);
     const size = box.getSize(new THREE.Vector3());
-    const scale = 2.35 / Math.max(size.x, 0.001);
+    const scale = 2.85 / Math.max(size.x, 0.001);
     sofa.scale.setScalar(scale);
-    sofa.rotation.y = Math.PI + 0.18;
-    sofa.position.set(2.05, ROOM.floorY - box.min.y * scale, 2.05);
+    sofa.rotation.y = Math.PI + 0.32;
+    sofa.position.set(2.35, ROOM.floorY - box.min.y * scale, 1.62);
     group.add(sofa);
   } catch (e) {
     console.warn("Sofa failed", e);
@@ -793,7 +794,7 @@ function makeRug() {
   const mat = new THREE.MeshStandardMaterial({
     map: tex, roughness: 0.9, metalness: 0, color: 0xffffff,
   });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 3.6), mat);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), mat);
   m.rotation.x = -Math.PI / 2;
   m.receiveShadow = true;
   return m;
@@ -833,15 +834,15 @@ function makeFloorLamp() {
   g.add(base);
   const shadeMat = new THREE.MeshStandardMaterial({
     color: 0xf0d6a8,
-    emissive: new THREE.Color(0xffc070),
-    emissiveIntensity: 0.9,
+    emissive: new THREE.Color(0xffd090),
+    emissiveIntensity: 1.8,
     roughness: 0.6,
     side: THREE.DoubleSide,
   });
   const shade = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.28, 16, 1, true), shadeMat);
   shade.position.y = 1.52;
   g.add(shade);
-  const bulb = new THREE.PointLight(0xffc070, 2.4, 5.5, 1.8);
+  const bulb = new THREE.PointLight(0xffc070, 3.8, 6.5, 1.6);
   bulb.position.set(0, 1.42, 0);
   bulb.castShadow = false;
   g.add(bulb);
@@ -885,6 +886,64 @@ function makePlant() {
     g.add(leaf);
   }
   return g;
+}
+
+
+function makeSidePicture() {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x3a2a16, roughness: 0.4, metalness: 0.15 });
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 384;
+  const ctx = c.getContext("2d");
+  const grd = ctx.createLinearGradient(0, 0, 0, 384);
+  grd.addColorStop(0, "#1a3040");
+  grd.addColorStop(0.45, "#24545c");
+  grd.addColorStop(0.7, "#c48a58");
+  grd.addColorStop(1, "#3a2014");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 512, 384);
+  ctx.fillStyle = "rgba(255,220,160,0.18)";
+  ctx.beginPath(); ctx.arc(360, 90, 70, 0, 6.28); ctx.fill();
+  ctx.fillStyle = "#1a2820";
+  ctx.fillRect(0, 250, 512, 134);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.7, 0.04), wood);
+  const art = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.58), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7 }));
+  art.position.z = 0.022;
+  g.add(frame); g.add(art);
+  // left wall, visible near the lamp
+  g.position.set(ROOM.minX + 0.04, 1.32, 1.85);
+  g.rotation.y = Math.PI / 2;
+  return g;
+}
+
+function makeFrontGlassFresnel() {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: {},
+    vertexShader: /* glsl */ `
+      varying vec3 vN; varying vec3 vV;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      varying vec3 vN; varying vec3 vV;
+      void main() {
+        float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.6);
+        vec3 col = mix(vec3(0.55, 0.78, 0.82), vec3(0.95, 0.98, 1.0), f);
+        gl_FragColor = vec4(col, 0.035 + f * 0.32);
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(TANK.w - 0.04, TANK.h - 0.04), mat);
+  m.position.set(0, TANK.h / 2, TANK.d / 2 + 0.02);
+  m.renderOrder = 4;
+  return m;
 }
 
 function makeFrames() {
