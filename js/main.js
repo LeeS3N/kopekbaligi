@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { detectQuality, createWorld, updateWorldTime, updateCameraIdle } from "./world.js";
-import { loadSharkGltf } from "./actors.js";
+import { preloadActors, loadSharkGltf } from "./actors.js";
 import { createGame } from "./sim.js";
 
 const STEPS = [
@@ -27,8 +27,10 @@ async function boot() {
   };
 
   setProgress(0.05, STEPS[0]);
+  const assetsP = preloadActors(manager);
   const world = await createWorld(canvas, quality, manager);
   setProgress(0.15, STEPS[2]);
+  await assetsP;
 
   let gltf = null;
   try {

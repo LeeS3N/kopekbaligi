@@ -1,30 +1,42 @@
 # Kaynaklar ve lisanslar
 
-## Köpekbalığı modeli
+Aşk Akvaryumu cinematic 3D sürümü. Tüm 3B modeller ve dokular yerelde sunulur.
 
-Bu çalışma, Mateus Schwaab (@Mehrus) tarafından yapılan
-**"Great White Shark"** modeline dayanır.
+## Köpekbalıkları
 
-- Kaynak: https://sketchfab.com/3d-models/great-white-shark-e4f107a6d87b424fb165aba9a53d0665
-- Yazar: https://sketchfab.com/Mehrus
-- Lisans: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+- **Blacktip reef shark** and **Whitetip reef shark** from the
+  [Ocean Giants kit](https://3dassets.dev/assets/ocean-giants-kit-blacktip-reef-shark-8d095121)
+  on [3DAssets.dev](https://3dassets.dev/). License: **CC0 1.0**.
+- Kaptan uses the slightly larger blacktip; İnci uses the smaller whitetip
+  with a warmer tint. Swim motion is a vertex-wave animation on the static meshes.
 
-Model yüzme ve ısırma animasyonlarıyla gelir. Bu oyunda iki köpekbalığı
-olarak kullanılır; İnci biraz daha küçük ve açık renkli, Kaptan biraz daha
-büyük ve koyudur. Dokular web için yeniden paketlenen bir kopyadan alınmıştır.
+## Resif, mercan ve bitkiler
 
-## Dokular
+- Coral, anemones, kelp, seagrass, sponges, clam, starfish, feather-duster worms
+  and live-rock from the
+  [Coral Reef and Underwater Scenery](https://3dassets.dev/api/v1/packs/underwater-reef-worlds)
+  pack on 3DAssets.dev. License: **CC0 1.0**.
 
-Aşağıdaki dokular [Poly Haven](https://polyhaven.com) üzerinden, **CC0 1.0**
-lisansıyla kullanılmıştır:
+## Balıklar
 
-- [Coast Sand 01](https://polyhaven.com/a/coast_sand_01)
-- [Rock Face 03](https://polyhaven.com/a/rock_face_03)
-- [Wood Cabinet Worn Long](https://polyhaven.com/a/wood_cabinet_worn_long)
+- Clownfish model and swim loop from [Gaitkit Tropical Fish](https://gaitkit.com/)
+  (commercial use allowed; credit given with thanks).
+- Blue tang, yellow tang, butterflyfish, angelfish and cardinal tetra schools
+  are original procedural models inspired by those species.
+
+## Oda, dokular ve HDRI
+
+All of the following are from [Poly Haven](https://polyhaven.com/), license **CC0 1.0**:
+
+- Interior HDRI: [Fireplace](https://polyhaven.com/a/fireplace) (2K / 1K)
+- Sofa: [sofa_02](https://polyhaven.com/a/sofa_02)
+- Wood floor: [wood_floor](https://polyhaven.com/a/wood_floor)
+- Walls: [painted_plaster_wall](https://polyhaven.com/a/painted_plaster_wall)
+- Sand: [coast_sand_01](https://polyhaven.com/a/coast_sand_01)
+- Rock: [rock_face_03](https://polyhaven.com/a/rock_face_03)
+- Cabinet wood: [wood_cabinet_worn_long](https://polyhaven.com/a/wood_cabinet_worn_long)
 
 ## Motor ve yazı tipleri
 
-- [Three.js](https://threejs.org) r181, MIT lisansı (`vendor/three/LICENSE`)
-- [Outfit](https://fonts.google.com/specimen/Outfit) ve
-  [Cormorant Garamond](https://fonts.google.com/specimen/Cormorant+Garamond),
-  SIL Open Font License
+- [Three.js](https://threejs.org/) r181, MIT License
+- Fonts: Outfit and Cormorant Garamond, SIL Open Font License

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { TANK, tankBounds, setDayNight } from "./world.js";
 import {
   createSharkActor, playBite, updateSharkVisual,
-  createKelp, createFishSchool, updateFish,
+  createKelp, createFishSchool, updateFish, createReefScenery,
   createBubbles, updateBubbles, createSnow, updateSnow,
   makeDecoration, updateJellies, createFoodMesh, createHeartSprite,
 } from "./actors.js";
@@ -181,6 +181,8 @@ export function createGame(world, gltf) {
     return actor;
   });
 
+  const reef = createReefScenery(world.quality, world.uniforms);
+  world.interior.add(reef);
   const kelp = createKelp(world.quality, world.uniforms);
   world.interior.add(kelp);
   const fish = createFishSchool(world.quality, world.uniforms);
