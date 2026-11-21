@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as skeletonClone } from "three/addons/utils/SkeletonUtils.js";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { TANK, tankBounds, applyUnderwater, dequantizeObject } from "./world.js";
+import { TANK, tankBounds, waterVolume, clampToWater, applyUnderwater, dequantizeObject } from "./world.js";
 
 export const CACHE = {
   sharks: {},
@@ -1573,6 +1573,30 @@ function spawnReefFish(gltf, uniforms, length, key, phase) {
   return { wrap, mixer };
 }
 
+
+function fishPad(f, fallbackLen = 0.14) {
+  const len = f.length || ((f.scale || 1) * fallbackLen);
+  const r = Math.max(0.04, len * 0.55);
+  return { x: r, y: Math.max(0.04, r * 0.65), z: Math.max(0.04, r * 0.45) };
+}
+
+function confineBody(f, dt, pad) {
+  const b = waterVolume(pad);
+  const soft = 0.14;
+  if (f.x < b.minX + soft) f.vx += (b.minX + soft - f.x) * 8 * dt;
+  if (f.x > b.maxX - soft) f.vx -= (f.x - (b.maxX - soft)) * 8 * dt;
+  if (f.y < b.minY + soft) f.vy += (b.minY + soft - f.y) * 10 * dt;
+  if (f.y > b.maxY - soft) f.vy -= (f.y - (b.maxY - soft)) * 10 * dt;
+  if (f.z < b.minZ + soft) f.vz += (b.minZ + soft - f.z) * 8 * dt;
+  if (f.z > b.maxZ - soft) f.vz -= (f.z - (b.maxZ - soft)) * 8 * dt;
+  if (f.x < b.minX) { f.x = b.minX; f.vx = Math.abs(f.vx) * 0.35; }
+  if (f.x > b.maxX) { f.x = b.maxX; f.vx = -Math.abs(f.vx) * 0.35; }
+  if (f.y < b.minY) { f.y = b.minY; f.vy = Math.abs(f.vy) * 0.35; }
+  if (f.y > b.maxY) { f.y = b.maxY; f.vy = -Math.abs(f.vy) * 0.35; }
+  if (f.z < b.minZ) { f.z = b.minZ; f.vz = Math.abs(f.vz) * 0.35; }
+  if (f.z > b.maxZ) { f.z = b.maxZ; f.vz = -Math.abs(f.vz) * 0.35; }
+}
+
 export function createFishSchool(quality, uniforms) {
   const group = new THREE.Group();
   const schools = [];
@@ -1589,18 +1613,25 @@ export function createFishSchool(quality, uniforms) {
         const phase = Math.random() * 6.28;
         const spawned = spawnPaintedFish(spec, uniforms, spec.len * scale, phase);
         group.add(spawned.wrap);
+        const length = spec.len * scale;
+        const p0 = clampToWater(
+          spec.base.cx + (Math.random() - 0.5) * spec.spread,
+          spec.base.cy + (Math.random() - 0.5) * 0.32,
+          spec.base.cz + (Math.random() - 0.5) * 0.42,
+          { x: length * 0.55, y: length * 0.4, z: length * 0.35 }
+        );
         members.push({
-          x: spec.base.cx + (Math.random() - 0.5) * spec.spread,
-          y: spec.base.cy + (Math.random() - 0.5) * 0.32,
-          z: spec.base.cz + (Math.random() - 0.5) * 0.42,
+          x: p0.x, y: p0.y, z: p0.z,
           vx: (Math.random() - 0.5) * 0.18,
           vy: 0,
           vz: (Math.random() - 0.5) * 0.18,
           phase,
           scale,
+          length,
           object: spawned.wrap,
           mixer: null,
         });
+        spawned.wrap.position.set(p0.x, p0.y, p0.z);
       }
       schools.push({ inst: null, members, objects: true, id: spec.id });
     }
@@ -1615,18 +1646,25 @@ export function createFishSchool(quality, uniforms) {
         const phase = Math.random() * 6.28;
         const spawned = spawnReefFish(gltf, uniforms, spec.len * scale, spec.id, phase);
         group.add(spawned.wrap);
+        const length = spec.len * scale;
+        const p0 = clampToWater(
+          spec.base.cx + (Math.random() - 0.5) * spec.spread,
+          spec.base.cy + (Math.random() - 0.5) * 0.32,
+          spec.base.cz + (Math.random() - 0.5) * 0.42,
+          { x: length * 0.55, y: length * 0.4, z: length * 0.35 }
+        );
         members.push({
-          x: spec.base.cx + (Math.random() - 0.5) * spec.spread,
-          y: spec.base.cy + (Math.random() - 0.5) * 0.32,
-          z: spec.base.cz + (Math.random() - 0.5) * 0.42,
+          x: p0.x, y: p0.y, z: p0.z,
           vx: (Math.random() - 0.5) * 0.18,
           vy: 0,
           vz: (Math.random() - 0.5) * 0.18,
           phase,
           scale,
+          length,
           object: spawned.wrap,
           mixer: spawned.mixer,
         });
+        spawned.wrap.position.set(p0.x, p0.y, p0.z);
       }
       schools.push({ inst: null, members, objects: true, id: spec.id });
     }
@@ -1658,12 +1696,18 @@ export function createFishSchool(quality, uniforms) {
       const b = bases[name];
       const spread = name === "tetra" ? 0.55 : 0.7;
       for (let i = 0; i < n; i++) {
+        const scale = 0.85 + Math.random() * 0.3;
+        const length = (spec.len || 0.12) * scale;
+        const p0 = clampToWater(
+          b.cx + (Math.random() - 0.5) * spread,
+          b.cy + (Math.random() - 0.5) * 0.35,
+          b.cz + (Math.random() - 0.5) * 0.45,
+          { x: length * 0.55, y: length * 0.4, z: length * 0.35 }
+        );
         members.push({
-          x: b.cx + (Math.random() - 0.5) * spread,
-          y: b.cy + (Math.random() - 0.5) * 0.35,
-          z: b.cz + (Math.random() - 0.5) * 0.45,
+          x: p0.x, y: p0.y, z: p0.z,
           vx: (Math.random() - 0.5) * 0.2, vy: 0, vz: (Math.random() - 0.5) * 0.2,
-          phase: Math.random() * 6.28, scale: 0.85 + Math.random() * 0.3,
+          phase: Math.random() * 6.28, scale, length,
         });
       }
       schools.push({ inst, members });
@@ -1687,13 +1731,19 @@ export function createFishSchool(quality, uniforms) {
         act.setLoop(THREE.LoopRepeat);
         act.time = i * 0.4;
       }
+      const p0 = clampToWater(
+        -1.15 + (Math.random() - 0.5) * 0.28,
+        0.45 + Math.random() * 0.18,
+        0.18 + (Math.random() - 0.5) * 0.18,
+        { x: 0.07, y: 0.05, z: 0.04 }
+      );
+      wrap.position.set(p0.x, p0.y, p0.z);
       members.push({
-        x: -1.15 + (Math.random() - 0.5) * 0.28,
-        y: 0.45 + Math.random() * 0.18,
-        z: 0.18 + (Math.random() - 0.5) * 0.18,
+        x: p0.x, y: p0.y, z: p0.z,
         vx: 0.05, vy: 0, vz: 0,
         phase: Math.random() * 6.28,
         scale: 1,
+        length: 0.12,
         object: wrap,
         mixer,
       });
@@ -1705,16 +1755,16 @@ export function createFishSchool(quality, uniforms) {
 }
 
 export function updateFish(schools, sharks, dt) {
-  if (typeof window !== "undefined" && window.__freezeFish) return;
-  const b = tankBounds();
   const dummy = new THREE.Object3D();
   const now = performance.now();
+  const frozen = typeof window !== "undefined" && window.__freezeFish;
   for (const school of schools) {
     let cx = 0, cy = 0, cz = 0;
     for (const f of school.members) { cx += f.x; cy += f.y; cz += f.z; }
     const n = school.members.length;
     cx /= n; cy /= n; cz /= n;
     school.members.forEach((f, i) => {
+      if (!frozen) {
       f.vx += (cx - f.x) * 0.55 * dt;
       f.vy += (cy - f.y) * 0.45 * dt;
       f.vz += (cz - f.z) * 0.55 * dt;
@@ -1740,16 +1790,16 @@ export function updateFish(schools, sharks, dt) {
           f.vz += (dz / d) * 2.2 * dt;
         }
       }
-      if (f.x < b.minX) f.vx += dt * 1.4;
-      if (f.x > b.maxX) f.vx -= dt * 1.4;
-      if (f.y < b.minY) f.vy += dt * 1.2;
-      if (f.y > b.maxY) f.vy -= dt * 1.2;
-      if (f.z < b.minZ) f.vz += dt * 1.4;
-      if (f.z > b.maxZ) f.vz -= dt * 1.4;
+      }
       const sp = Math.hypot(f.vx, f.vy, f.vz);
       const maxSp = school.objects ? 0.35 : 0.55;
       if (sp > maxSp) { f.vx *= maxSp / sp; f.vy *= maxSp / sp; f.vz *= maxSp / sp; }
-      f.x += f.vx; f.y += f.vy; f.z += f.vz;
+      if (!frozen) {
+        f.x += f.vx * dt;
+        f.y += f.vy * dt;
+        f.z += f.vz * dt;
+      }
+      confineBody(f, dt, fishPad(f, school.objects ? 0.14 : 0.1));
       if (f.object) {
         f.object.position.set(f.x, f.y, f.z);
         const lookX = f.x + f.vx, lookY = f.y + f.vy, lookZ = f.z + f.vz;
@@ -1794,10 +1844,16 @@ export function createBubbles(quality) {
   inst.raycast = () => {};
   const items = [];
   for (let i = 0; i < quality.bubbles; i++) {
+    const p0 = clampToWater(
+      (Math.random() - 0.5) * TANK.w * 0.8,
+      TANK.sand + 0.08 + Math.random() * (TANK.water - TANK.sand - 0.16),
+      (Math.random() - 0.5) * TANK.d * 0.8,
+      0.04
+    );
     items.push({
-      x: (Math.random() - 0.5) * TANK.w * 0.9,
-      y: Math.random() * TANK.water,
-      z: (Math.random() - 0.5) * TANK.d * 0.9,
+      x: p0.x,
+      y: p0.y,
+      z: p0.z,
       r: 0.008 + Math.random() * 0.022,
       vy: 0.12 + Math.random() * 0.22,
       ph: Math.random() * 6.28,
@@ -1822,11 +1878,14 @@ export function updateBubbles(bubbles, t, dt) {
     const b = bubbles.items[i];
     b.y += b.vy * dt;
     b.x += Math.sin(t * 1.3 + b.ph) * 0.04 * dt;
-    if (b.y > TANK.water - 0.05) {
-      b.y = TANK.sand + 0.05;
-      b.x = (Math.random() - 0.5) * TANK.w * 0.9;
-      b.z = (Math.random() - 0.5) * TANK.d * 0.9;
+    const vol = waterVolume(0.04);
+    if (b.y > vol.maxY) {
+      b.y = vol.minY;
+      b.x = vol.minX + Math.random() * (vol.maxX - vol.minX);
+      b.z = vol.minZ + Math.random() * (vol.maxZ - vol.minZ);
     }
+    b.x = Math.min(vol.maxX, Math.max(vol.minX, b.x));
+    b.z = Math.min(vol.maxZ, Math.max(vol.minZ, b.z));
     dummy.position.set(b.x, b.y, b.z);
     dummy.scale.setScalar(b.r);
     dummy.updateMatrix();
@@ -1840,9 +1899,15 @@ export function createSnow(quality) {
   const n = quality.snow;
   const pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
-    pos[i * 3] = (Math.random() - 0.5) * TANK.w;
-    pos[i * 3 + 1] = Math.random() * TANK.water;
-    pos[i * 3 + 2] = (Math.random() - 0.5) * TANK.d;
+    const p0 = clampToWater(
+      (Math.random() - 0.5) * TANK.w * 0.85,
+      TANK.sand + 0.06 + Math.random() * (TANK.water - TANK.sand - 0.12),
+      (Math.random() - 0.5) * TANK.d * 0.85,
+      0.02
+    );
+    pos[i * 3] = p0.x;
+    pos[i * 3 + 1] = p0.y;
+    pos[i * 3 + 2] = p0.z;
   }
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   const mat = new THREE.PointsMaterial({
@@ -1861,10 +1926,14 @@ export function createSnow(quality) {
 export function updateSnow(pts, dt) {
   const p = pts.geometry.attributes.position;
   for (let i = 0; i < p.count; i++) {
+    const vol = waterVolume(0.02);
     let y = p.getY(i) - 0.03 * dt;
     let x = p.getX(i) + Math.sin(i + performance.now() * 0.0003) * 0.01 * dt;
-    if (y < TANK.sand) y = TANK.water - 0.05;
-    p.setXYZ(i, x, y, p.getZ(i));
+    let z = p.getZ(i);
+    if (y < vol.minY) y = vol.maxY;
+    x = Math.min(vol.maxX, Math.max(vol.minX, x));
+    z = Math.min(vol.maxZ, Math.max(vol.minZ, z));
+    p.setXYZ(i, x, y, z);
   }
   p.needsUpdate = true;
 }

@@ -127,16 +127,34 @@ export function finalizeQuality(quality, gpuStr) {
   return applyUrlFlags(quality);
 }
 
-export function tankBounds() {
-  const m = 0.28;
+/** Inner water volume (inside the glass, below the water surface). pad is a body radius. */
+export function waterVolume(pad = 0.08) {
+  const px = typeof pad === "object" ? (pad.x ?? 0.08) : pad;
+  const py = typeof pad === "object" ? (pad.y ?? 0.08) : pad;
+  const pz = typeof pad === "object" ? (pad.z ?? 0.08) : pad;
+  const wall = TANK.glass + 0.03;
   return {
-    minX: -TANK.w / 2 + m,
-    maxX: TANK.w / 2 - m,
-    minY: TANK.sand + 0.22,
-    maxY: TANK.water - 0.28,
-    minZ: -TANK.d / 2 + m,
-    maxZ: TANK.d / 2 - m,
+    minX: -TANK.w / 2 + wall + px,
+    maxX:  TANK.w / 2 - wall - px,
+    minY: TANK.sand + 0.05 + py,
+    maxY: TANK.water - 0.04 - py,
+    minZ: -TANK.d / 2 + wall + pz,
+    maxZ:  TANK.d / 2 - wall - pz,
   };
+}
+
+export function clampToWater(x, y, z, pad = 0.08) {
+  const b = waterVolume(pad);
+  return {
+    x: Math.min(b.maxX, Math.max(b.minX, x)),
+    y: Math.min(b.maxY, Math.max(b.minY, y)),
+    z: Math.min(b.maxZ, Math.max(b.minZ, z)),
+  };
+}
+
+/** Default school/shark wander box — water volume with a conservative center margin. */
+export function tankBounds() {
+  return waterVolume(0.18);
 }
 
 function texLoader(manager) {

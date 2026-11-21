@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { TANK, tankBounds, setDayNight } from "./world.js";
+import { TANK, tankBounds, waterVolume, clampToWater, setDayNight } from "./world.js";
 import {
   createSharkActor, playBite, updateSharkVisual,
   createKelp, createFishSchool, updateFish, createReefScenery,
@@ -358,9 +358,10 @@ export function createGame(world, gltf) {
     if (typ.price > 0 && state.coins < typ.price) { toast("Yeterli midye yok."); return; }
     if (typ.price > 0) { state.coins -= typ.price; updateHUD(); }
     const b = tankBounds();
-    const x = clamp(point.x, b.minX, b.maxX);
-    const y = clamp(point.y, TANK.water - 0.15, TANK.water - 0.02);
-    const z = clamp(point.z, b.minZ, b.maxZ);
+    const vol = waterVolume(0.05);
+    const x = clamp(point.x, vol.minX, vol.maxX);
+    const y = clamp(point.y, vol.minY, vol.maxY);
+    const z = clamp(point.z, vol.minZ, vol.maxZ);
     const mesh = createFoodMesh(typ.id, typ.color);
     mesh.position.set(x, y, z);
     world.interior.add(mesh);
@@ -460,9 +461,21 @@ export function createGame(world, gltf) {
       s.vz = lerp(s.vz, az * maxSp, 1 - Math.pow(0.02, dt * steer * 0.4));
       const sp = Math.hypot(s.vx, s.vy, s.vz);
       if (sp > maxSp) { s.vx *= maxSp / sp; s.vy *= maxSp / sp; s.vz *= maxSp / sp; }
-      s.x = clamp(s.x + s.vx * dt, b.minX - 0.05, b.maxX + 0.05);
-      s.y = clamp(s.y + s.vy * dt, TANK.sand + 0.18, TANK.water - 0.18);
-      s.z = clamp(s.z + s.vz * dt, b.minZ - 0.05, b.maxZ + 0.05);
+      const pad = {
+        x: Math.max(0.22, (s.length || 1.2) * 0.28),
+        y: Math.max(0.16, (s.length || 1.2) * 0.12),
+        z: Math.max(0.16, (s.length || 1.2) * 0.14),
+      };
+      const vol = waterVolume(pad);
+      s.x = clamp(s.x + s.vx * dt, vol.minX, vol.maxX);
+      s.y = clamp(s.y + s.vy * dt, vol.minY, vol.maxY);
+      s.z = clamp(s.z + s.vz * dt, vol.minZ, vol.maxZ);
+      if (s.x <= vol.minX && s.vx < 0) s.vx *= -0.3;
+      if (s.x >= vol.maxX && s.vx > 0) s.vx *= -0.3;
+      if (s.y <= vol.minY && s.vy < 0) s.vy *= -0.3;
+      if (s.y >= vol.maxY && s.vy > 0) s.vy *= -0.3;
+      if (s.z <= vol.minZ && s.vz < 0) s.vz *= -0.3;
+      if (s.z >= vol.maxZ && s.vz > 0) s.vz *= -0.3;
       if (sp > 0.05) {
         s.heading = Math.atan2(s.vz, s.vx);
         s.pitch = Math.atan2(s.vy, Math.hypot(s.vx, s.vz));
@@ -533,9 +546,13 @@ export function createGame(world, gltf) {
 
   function updateFoods(dt) {
     for (const f of state.foods) {
+      const vol = waterVolume(0.04);
       f.vy = Math.min(f.vy + 0.35 * dt, 0.45);
       f.y -= f.vy * dt;
-      if (f.y <= TANK.sand + 0.04) { f.y = TANK.sand + 0.04; f.vy = 0; f.sink = (f.sink || 0) + dt; }
+      f.x = clamp(f.x, vol.minX, vol.maxX);
+      f.z = clamp(f.z, vol.minZ, vol.maxZ);
+      if (f.y <= vol.minY) { f.y = vol.minY; f.vy = 0; f.sink = (f.sink || 0) + dt; }
+      if (f.y > vol.maxY) f.y = vol.maxY;
       f.mesh.position.set(f.x, f.y, f.z);
       f.mesh.rotation.y += dt * 1.2;
     }
@@ -549,8 +566,10 @@ export function createGame(world, gltf) {
   function updateHearts(dt) {
     state.hearts = state.hearts.filter((h) => {
       h.life -= dt;
-      h.sprite.position.y += h.vy * dt;
-      h.sprite.position.x += Math.sin((h.max - h.life) * 6 + h.vy) * 0.08 * dt;
+      const vol = waterVolume(0.04);
+      h.sprite.position.y = Math.min(vol.maxY, h.sprite.position.y + h.vy * dt);
+      h.sprite.position.x = clamp(h.sprite.position.x + Math.sin((h.max - h.life) * 6 + h.vy) * 0.08 * dt, vol.minX, vol.maxX);
+      h.sprite.position.z = clamp(h.sprite.position.z, vol.minZ, vol.maxZ);
       const k = clamp(h.life / h.max, 0, 1);
       h.sprite.material.opacity = k;
       const s = (h.baseScale || h.sprite.scale.x) * (0.85 + 0.25 * Math.sin((h.max - h.life) * 8));
