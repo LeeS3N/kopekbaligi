@@ -121,62 +121,113 @@ function addAlongAttribute(wrap) {
   const v = new THREE.Vector3();
   const buckets = [];
   let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  let maxSide = 0;
   wrap.traverse((o) => {
     if (!o.isMesh || !o.geometry?.attributes?.position) return;
     const pos = o.geometry.attributes.position;
-    const arr = new Float32Array(pos.count);
+    const xs = new Float32Array(pos.count);
+    const ys = new Float32Array(pos.count);
+    const zs = new Float32Array(pos.count);
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i);
       o.localToWorld(v);
       v.applyMatrix4(inv);
-      arr[i] = v.x;
+      xs[i] = v.x; ys[i] = v.y; zs[i] = v.z;
       if (v.x < minX) minX = v.x;
       if (v.x > maxX) maxX = v.x;
+      if (v.y < minY) minY = v.y;
+      if (v.y > maxY) maxY = v.y;
+      maxSide = Math.max(maxSide, Math.abs(v.z));
     }
-    buckets.push({ o, arr });
+    buckets.push({ o, xs, ys, zs });
   });
-  const span = Math.max(1e-4, maxX - minX);
-  for (const { o, arr } of buckets) {
-    const along = new Float32Array(arr.length);
-    for (let i = 0; i < arr.length; i++) along[i] = (arr[i] - minX) / span;
+  const spanX = Math.max(1e-4, maxX - minX);
+  const spanY = Math.max(1e-4, maxY - minY);
+  const spanZ = Math.max(1e-4, maxSide);
+  for (const { o, xs, ys, zs } of buckets) {
+    const along = new Float32Array(xs.length);
+    const lift = new Float32Array(xs.length);
+    const side = new Float32Array(xs.length);
+    for (let i = 0; i < xs.length; i++) {
+      along[i] = (xs[i] - minX) / spanX;
+      lift[i] = (ys[i] - minY) / spanY;
+      side[i] = Math.abs(zs[i]) / spanZ;
+    }
     o.geometry = o.geometry.clone();
     o.geometry.setAttribute("aAlong", new THREE.BufferAttribute(along, 1));
+    o.geometry.setAttribute("aLift", new THREE.BufferAttribute(lift, 1));
+    o.geometry.setAttribute("aSide", new THREE.BufferAttribute(side, 1));
   }
 }
 
 function upgradeSharkMaterial(src, gender) {
   const p = new THREE.MeshStandardMaterial();
-  if (src) {
-    p.color = src.color ? src.color.clone() : new THREE.Color(0x8899aa);
-    p.map = src.map || null;
-    p.normalMap = src.normalMap || null;
-    p.roughnessMap = src.roughnessMap || null;
-    p.metalnessMap = src.metalnessMap || null;
-    p.aoMap = src.aoMap || null;
-    p.roughness = Math.min(src.roughness ?? 0.48, 0.48);
-    p.metalness = 0.04;
-    if (src.map) p.map.colorSpace = THREE.SRGBColorSpace;
+  const name = (src?.name || "").toLowerCase();
+  const srcCol = src?.color ? src.color.clone() : new THREE.Color(0x6a7074);
+  const lum = srcCol.r * 0.22 + srcCol.g * 0.5 + srcCol.b * 0.14;
+  const isDark = name.includes("dark") || lum < 0.16;
+  const isCream = name.includes("cream") || lum > 0.62;
+  if (src?.map) {
+    p.map = src.map;
+    p.map.colorSpace = THREE.SRGBColorSpace;
   }
-  if (gender === "f") {
-    p.color.multiply(new THREE.Color(0.95, 0.82, 0.72));
-    p.emissive = new THREE.Color(0x1a100c);
+  if (isDark) {
+    p.color.set(0x07080a);
+    p.roughness = 0.16;
+    p.metalness = 0.42;
+    p.envMapIntensity = 1.25;
+    p.emissive = new THREE.Color(0x101218);
+    p.emissiveIntensity = 0.12;
+    p.userData.role = "eye";
+  } else if (isCream) {
+    p.color.set(gender === "f" ? 0xcbb39a : 0xc2c0b4);
+    p.roughness = 0.52;
+    p.metalness = 0.03;
+    p.envMapIntensity = 0.4;
+    p.userData.role = "belly";
   } else {
-    p.color.multiply(new THREE.Color(0.46, 0.52, 0.62));
-    p.emissive = new THREE.Color(0x0a1218);
+    p.color.set(gender === "f" ? 0x6a4e38 : 0x3c403e);
+    p.roughness = 0.36;
+    p.metalness = 0.1;
+    p.envMapIntensity = 0.85;
+    p.emissive = new THREE.Color(gender === "f" ? 0x1a1208 : 0x0c1214);
+    p.emissiveIntensity = 0.03;
+    p.userData.role = "body";
   }
-  p.emissiveIntensity = 0.05;
-  p.envMapIntensity = 0.55;
-  p.roughness = Math.min(Math.max(p.roughness, 0.42), 0.62);
   return p;
 }
 
 const SWIM_VERT = `
-  float along = aAlong;
-  float wag = sin(uTime * 6.15 + along * 5.4 + uPhase) * uAmp * along * along;
-  transformed.z += wag * 0.45;
-  transformed.x += wag * 0.02;
-  float pec = smoothstep(0.32, 0.52, along) * (1.0 - smoothstep(0.52, 0.78, along));
-  transformed.y += sin(uTime * 8.2 + uPhase) * pec * uAmp * 0.16;
+  float along = clamp(aAlong, 0.0, 1.0);
+  float tail = pow(smoothstep(0.22, 1.0, along), 1.25);
+  float wag = sin(uTime * 5.15 + along * 3.6 + uPhase);
+  float wag2 = sin(uTime * 7.1 + along * 5.8 + uPhase) * 0.18;
+  transformed.z += (wag + wag2) * uAmp * tail * 0.48;
+  transformed.x += wag * uAmp * tail * 0.016;
+  float pec = smoothstep(0.26, 0.44, along) * (1.0 - smoothstep(0.50, 0.74, along));
+  transformed.y += sin(uTime * 6.2 + uPhase) * pec * uAmp * 0.10;
+  vAlong = along;
+  vLift = aLift;
+  vSide = aSide;
+`;
+
+const SHARK_MARKS = `
+  float dorsal = smoothstep(0.55, 0.82, vLift);
+  vec3 bronze = mix(outgoingLight, outgoingLight * vec3(0.62, 0.58, 0.48), dorsal * 0.55);
+  outgoingLight = bronze;
+  float belly = 1.0 - smoothstep(0.35, 0.62, vLift);
+  outgoingLight = mix(outgoingLight, outgoingLight * vec3(1.18, 1.14, 1.08) + vec3(0.03, 0.03, 0.025), belly * 0.35);
+  float tailTip = smoothstep(0.88, 0.96, vAlong) * smoothstep(0.15, 0.55, max(vLift, vSide));
+  float dorsalTip = smoothstep(0.86, 0.96, vLift) * smoothstep(0.36, 0.52, vAlong) * (1.0 - smoothstep(0.68, 0.86, vAlong));
+  float pecTip = smoothstep(0.80, 0.94, vSide) * (1.0 - smoothstep(0.62, 0.85, vLift)) * smoothstep(0.22, 0.40, vAlong) * (1.0 - smoothstep(0.55, 0.75, vAlong));
+  float caudal = smoothstep(0.90, 0.97, vAlong);
+  float tip = clamp(max(max(tailTip, dorsalTip), max(pecTip, caudal)), 0.0, 1.0);
+  vec3 markCol = uMark > 0.5 ? vec3(0.95, 0.96, 0.93) : vec3(0.015, 0.015, 0.018);
+  outgoingLight = mix(outgoingLight, markCol, tip * 0.92);
+  // wet sheen
+  float shine = pow(clamp(dot(normalize(normal), vec3(0.15, 0.75, 0.64)), 0.0, 1.0), 28.0);
+  outgoingLight += vec3(0.55, 0.65, 0.68) * shine * 0.28;
 `;
 
 export function createSharkActor(spec, gltf, uniforms, length) {
@@ -201,10 +252,20 @@ export function createSharkActor(spec, gltf, uniforms, length) {
         const upgraded = mats.map((m) => {
           const p = upgradeSharkMaterial(m, spec.gender);
           applyUnderwater(p, uniforms, {
-            key: "shark-swim-" + spec.gender,
-            uniforms: { uAmp: swimU.uAmp, uPhase: swimU.uPhase },
-            vertexCommon: "attribute float aAlong; uniform float uAmp; uniform float uPhase; uniform float uTime;",
+            key: "shark-swim-" + spec.gender + "-" + (p.userData.role || "body"),
+            uniforms: {
+              uAmp: swimU.uAmp,
+              uPhase: swimU.uPhase,
+              uMark: { value: spec.gender === "f" ? 1 : 0 },
+              uCauGain: { value: 0.42 },
+            },
+            vertexCommon: "attribute float aAlong; attribute float aLift; attribute float aSide; varying float vAlong; varying float vLift; varying float vSide; uniform float uAmp; uniform float uPhase; uniform float uTime;",
+            fragmentCommon: "varying float vAlong; varying float vLift; varying float vSide; uniform float uMark;",
             vertexBend: SWIM_VERT,
+            fragmentExtra: p.userData.role === "eye" ? `
+              float glint = pow(clamp(dot(normalize(normal), normalize(vec3(0.2, 0.6, 0.75))), 0.0, 1.0), 40.0);
+              outgoingLight += vec3(0.85, 0.9, 0.95) * glint * 0.8;
+            ` : SHARK_MARKS,
           });
           return p;
         });

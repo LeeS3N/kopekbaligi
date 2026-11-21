@@ -235,6 +235,7 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
     shader.uniforms.uFogDensity = uniforms.uFogDensity;
     if (uniforms.uCausticColor) shader.uniforms.uCausticColor = uniforms.uCausticColor;
     if (hooks.uniforms) Object.assign(shader.uniforms, hooks.uniforms);
+    if (!shader.uniforms.uCauGain) shader.uniforms.uCauGain = hooks.uniforms?.uCauGain || { value: 1.0 };
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -251,7 +252,7 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
         vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\n" + WATER_HELPERS)
+      .replace("#include <common>", "#include <common>\nuniform float uCauGain;\n" + (hooks.fragmentCommon || "") + "\n" + WATER_HELPERS)
       .replace(
         "#include <opaque_fragment>",
         `{
@@ -264,7 +265,8 @@ export function applyUnderwater(material, uniforms, hooks = {}) {
         float c = caustic(vWorldPos.xz);
         float up = clamp(dot(normalize(normal), vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
         vec3 cauCol = vec3(0.55, 0.95, 0.92);
-        outgoingLight += cauCol * (0.28 + 1.15 * c) * up * mix(1.0, 0.28, uNight) * (1.0 - absorb * 0.35);
+        outgoingLight += cauCol * (0.28 + 1.15 * c) * up * mix(1.0, 0.28, uNight) * (1.0 - absorb * 0.35) * uCauGain;
+        ${hooks.fragmentExtra || ""}
         }
         #include <opaque_fragment>`
       );
