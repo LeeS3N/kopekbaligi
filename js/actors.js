@@ -235,8 +235,11 @@ const SHARK_MARKS = `
     smoothstep(0.66, 0.76, vLift) * (1.0 - smoothstep(0.86, 0.95, vLift)) * smoothstep(0.28, 0.48, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong))
   ), smoothstep(0.58, 0.72, vSide) * (1.0 - smoothstep(0.80, 0.92, vSide)) * (1.0 - smoothstep(0.58, 0.84, vLift)) * smoothstep(0.18, 0.38, vAlong) * (1.0 - smoothstep(0.52, 0.76, vAlong))), 0.0, 1.0);
   if (uMark > 0.5) {
-    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.28, 0.24, 0.20), collar * 0.7);
-    outgoingLight = mix(outgoingLight, vec3(0.96, 0.97, 0.94), tip * 0.98);
+    float dTipW = smoothstep(0.70, 0.88, vLift) * smoothstep(0.26, 0.50, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong));
+    float tailW = smoothstep(0.76, 0.92, vAlong) * smoothstep(0.12, 0.55, max(vLift, vSide));
+    float tipF = clamp(max(tip, max(dTipW, tailW)), 0.0, 1.0);
+    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.22, 0.20, 0.16), collar * 0.8);
+    outgoingLight = mix(outgoingLight, vec3(0.97, 0.98, 0.95), tipF * 0.99);
   } else {
     outgoingLight = mix(outgoingLight, vec3(0.01, 0.01, 0.012), tip * 0.97);
   }
@@ -491,10 +494,10 @@ function styleCoralMaterial(m, name, opts, quality) {
     staghorn: 0xb07a52,
     elkhorn: 0xb89860,
     pillar: 0xb07a48,
-    finger: 0xa86a42,
+    finger: 0x9a5e38,
     seafan: 0xa85a42,
     softbush: 0x8a6a38,
-    carnation: 0xc25038,
+    carnation: 0xa84830,
     barrel_sponge: 0xa85a28,
     vase_sponge: 0xb86838,
     anemone: 0xd4a078,

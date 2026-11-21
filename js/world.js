@@ -395,7 +395,16 @@ export async function createWorld(canvas, quality, manager) {
   root.add(cabinet);
 
   const sand = makeSand(tex, quality);
-  applyUnderwater(sand.material, uniforms, { key: "sand", uniforms: { uCauGain: { value: 1.85 } } });
+  applyUnderwater(sand.material, uniforms, {
+    key: "sand-cau",
+    uniforms: { uCauGain: { value: 1.55 } },
+    fragmentExtra: `
+      float c2 = caustic(vWorldPos.xz * 1.12 + vec2(0.07, -0.04));
+      float vein = smoothstep(0.12, 0.62, c2);
+      outgoingLight *= mix(vec3(0.68, 0.72, 0.66), vec3(1.18, 1.22, 1.12), vein);
+      outgoingLight += vec3(0.45, 0.75, 0.70) * pow(c2, 1.6) * 0.22;
+    `,
+  });
   root.add(sand);
 
   const interior = new THREE.Group();
