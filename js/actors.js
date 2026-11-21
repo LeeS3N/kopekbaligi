@@ -207,6 +207,13 @@ const SWIM_VERT = `
   transformed.x += wag * uAmp * tail * 0.016;
   float pec = smoothstep(0.26, 0.44, along) * (1.0 - smoothstep(0.50, 0.74, along));
   transformed.y += sin(uTime * 6.2 + uPhase) * pec * uAmp * 0.10;
+  float bite = uBite;
+  if (bite > 0.001) {
+    float head = 1.0 - smoothstep(0.0, 0.22, along);
+    float lower = 1.0 - smoothstep(0.32, 0.58, aLift);
+    transformed.y -= head * lower * bite * 0.09;
+    transformed.x += head * bite * 0.025;
+  }
   vAlong = along;
   vLift = aLift;
   vSide = aSide;
@@ -237,6 +244,7 @@ export function createSharkActor(spec, gltf, uniforms, length) {
   const swimU = {
     uAmp: { value: 0.2 },
     uPhase: { value: Math.random() * 6.28 },
+    uBite: { value: 0 },
   };
 
   const pack = pickGltf(gltf, spec.gender);
@@ -256,10 +264,11 @@ export function createSharkActor(spec, gltf, uniforms, length) {
             uniforms: {
               uAmp: swimU.uAmp,
               uPhase: swimU.uPhase,
+              uBite: swimU.uBite,
               uMark: { value: spec.gender === "f" ? 1 : 0 },
               uCauGain: { value: 0.42 },
             },
-            vertexCommon: "attribute float aAlong; attribute float aLift; attribute float aSide; varying float vAlong; varying float vLift; varying float vSide; uniform float uAmp; uniform float uPhase; uniform float uTime;",
+            vertexCommon: "attribute float aAlong; attribute float aLift; attribute float aSide; varying float vAlong; varying float vLift; varying float vSide; uniform float uAmp; uniform float uPhase; uniform float uTime; uniform float uBite;",
             fragmentCommon: "varying float vAlong; varying float vLift; varying float vSide; uniform float uMark;",
             vertexBend: SWIM_VERT,
             fragmentExtra: p.userData.role === "eye" ? `
@@ -336,6 +345,7 @@ export function createSharkActor(spec, gltf, uniforms, length) {
 
 export function playBite(shark) {
   shark.biteT = 0.45;
+  if (shark.model?.userData?.swim?.uBite) shark.model.userData.swim.uBite.value = 0.15;
   const bite = shark.actions.bite;
   const swim = shark.actions.swim;
   if (bite) {
@@ -371,6 +381,13 @@ export function updateSharkVisual(shark, dt) {
   const swim = shark.model?.userData?.swim;
   if (swim) {
     swim.uAmp.value = 0.16 + Math.min(sp, 1.6) * 0.22;
+    if (shark.biteT > 0) {
+      shark.biteT = Math.max(0, shark.biteT - dt);
+      const open = shark.biteT > 0.22 ? (0.45 - shark.biteT) / 0.23 : shark.biteT / 0.22;
+      if (swim.uBite) swim.uBite.value = Math.max(0, Math.min(1, open));
+    } else if (swim.uBite) {
+      swim.uBite.value = 0;
+    }
   }
   shark.label.position.set(0, 0.32, 0);
 }
@@ -1314,35 +1331,100 @@ export function updateJellies(group, t) {
 }
 
 export function createFoodMesh(id, color) {
-  let mesh;
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color, emissive: new THREE.Color(color), emissiveIntensity: id === "treat" ? 0.55 : 0.22,
+    roughness: 0.4, metalness: 0.08,
+  });
+  let core;
   if (id === "treat") {
-    mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.04, 0), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.4, roughness: 0.35 }));
+    core = new THREE.Mesh(new THREE.OctahedronGeometry(0.045, 0), mat);
   } else if (id === "krill") {
-    mesh = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), new THREE.MeshStandardMaterial({ color, roughness: 0.5 }));
-    mesh.scale.set(1.6, 0.6, 0.7);
+    core = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), mat);
+    core.scale.set(1.8, 0.55, 0.7);
   } else {
     const g = fishGeo();
-    g.scale(0.7, 0.7, 0.7);
-    mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.5 }));
+    g.scale(0.75, 0.75, 0.75);
+    core = new THREE.Mesh(g, mat);
   }
-  mesh.castShadow = true;
-  return mesh;
+  core.castShadow = true;
+  group.add(core);
+  group.userData.foodCore = core;
+  return group;
+}
+
+export function createFeedBurst(color, n = 12) {
+  const group = new THREE.Group();
+  const col = new THREE.Color(color);
+  const items = [];
+  for (let i = 0; i < n; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: col.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.15),
+      transparent: true, opacity: 0.95, depthWrite: false,
+    });
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.012 + Math.random() * 0.014, 6, 5), mat);
+    group.add(m);
+    items.push({
+      mesh: m,
+      vx: (Math.random() - 0.5) * 0.55,
+      vy: 0.12 + Math.random() * 0.35,
+      vz: (Math.random() - 0.5) * 0.55,
+      life: 0.45 + Math.random() * 0.4,
+      max: 0.85,
+    });
+  }
+  group.userData.burst = items;
+  return group;
+}
+
+export function updateFeedBursts(bursts, dt) {
+  return bursts.filter((b) => {
+    let alive = false;
+    for (const p of b.userData.burst) {
+      p.life -= dt;
+      if (p.life <= 0) { p.mesh.visible = false; continue; }
+      alive = true;
+      p.vy -= 0.55 * dt;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      const k = Math.max(0, p.life / p.max);
+      p.mesh.material.opacity = k;
+      p.mesh.scale.setScalar(0.5 + k * 0.8);
+    }
+    return alive;
+  });
 }
 
 export function createHeartSprite() {
   const c = document.createElement("canvas");
-  c.width = c.height = 64;
+  c.width = c.height = 128;
   const ctx = c.getContext("2d");
-  ctx.translate(32, 28);
+  const grd = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
+  grd.addColorStop(0, "rgba(255,180,200,0.0)");
+  grd.addColorStop(1, "rgba(255,80,120,0.0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, 128, 128);
+  ctx.translate(64, 58);
   ctx.beginPath();
-  ctx.moveTo(0, 10);
-  ctx.bezierCurveTo(-18, -8, -16, -22, 0, -12);
-  ctx.bezierCurveTo(16, -22, 18, -8, 0, 10);
-  ctx.fillStyle = "#ff8fab";
+  ctx.moveTo(0, 22);
+  ctx.bezierCurveTo(-36, -10, -32, -40, 0, -22);
+  ctx.bezierCurveTo(32, -40, 36, -10, 0, 22);
+  ctx.fillStyle = "#ff5a86";
+  ctx.shadowColor = "rgba(255,90,140,0.85)";
+  ctx.shadowBlur = 16;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255,230,240,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(-10, -10, 8, 5, -0.6, 0, 6.28);
   ctx.fill();
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
   return new THREE.Sprite(mat);
 }
 

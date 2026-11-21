@@ -4,7 +4,7 @@ import {
   createSharkActor, playBite, updateSharkVisual,
   createKelp, createFishSchool, updateFish, createReefScenery,
   createBubbles, updateBubbles, createSnow, updateSnow,
-  makeDecoration, updateJellies, createFoodMesh, createHeartSprite,
+  makeDecoration, updateJellies, createFoodMesh, createHeartSprite, createFeedBurst, updateFeedBursts,
 } from "./actors.js";
 
 export const SAVE_KEY = "askAkvaryumu:v1";
@@ -140,7 +140,7 @@ export function createGame(world, gltf) {
     bornAt: Date.now(),
     seenIntro: false,
     foods: [],
-    hearts: [],
+    hearts: [], bursts: [],
     kissCool: 8,
     kissing: 0,
     t: 0,
@@ -346,9 +346,10 @@ export function createGame(world, gltf) {
     for (let i = 0; i < n; i++) {
       const s = createHeartSprite();
       s.position.set(x + rand(-0.08, 0.08), y + rand(-0.04, 0.08), z + rand(-0.08, 0.08));
-      s.scale.setScalar(rand(0.12, 0.22));
+      const sc = rand(0.16, 0.28);
+      s.scale.setScalar(sc);
       world.interior.add(s);
-      state.hearts.push({ sprite: s, vy: rand(0.18, 0.35), life: rand(0.9, 1.6), max: 1.6 });
+      state.hearts.push({ sprite: s, vy: rand(0.18, 0.38), life: rand(1.1, 1.9), max: 1.9, baseScale: sc });
     }
   }
 
@@ -363,6 +364,10 @@ export function createGame(world, gltf) {
     const mesh = createFoodMesh(typ.id, typ.color);
     mesh.position.set(x, y, z);
     world.interior.add(mesh);
+    const burst = createFeedBurst(typ.color, 14);
+    burst.position.set(x, y, z);
+    world.interior.add(burst);
+    state.bursts.push(burst);
     state.foods.push({ id: typ.id, mesh, x, y, z, vy: 0.12, sink: 0, typ });
     audio.drop();
     save();
@@ -473,6 +478,10 @@ export function createGame(world, gltf) {
     s.eatCool = 0.4;
     state.coins += typ.coins;
     state.feedCount += 1;
+    const burst = createFeedBurst(typ.color, 16);
+    burst.position.copy(food.mesh.position);
+    world.interior.add(burst);
+    state.bursts.push(burst);
     world.interior.remove(food.mesh);
     state.foods = state.foods.filter((f) => f !== food);
     playBite(s);
@@ -486,6 +495,10 @@ export function createGame(world, gltf) {
 
   function maybeKiss(dt) {
     state.kissCool = Math.max(0, state.kissCool - dt);
+    if (canBond() && dist3(sharks[0], sharks[1]) < 1.15 && state.kissing <= 0 && Math.random() < 0.04) {
+      const a = sharks[0], b = sharks[1];
+      burstHearts((a.x + b.x) / 2, (a.y + b.y) / 2 + 0.16, (a.z + b.z) / 2, 1);
+    }
     if (state.kissing > 0) {
       state.kissing -= dt;
       if (Math.random() < 0.25) {
@@ -530,7 +543,12 @@ export function createGame(world, gltf) {
     state.hearts = state.hearts.filter((h) => {
       h.life -= dt;
       h.sprite.position.y += h.vy * dt;
-      h.sprite.material.opacity = clamp(h.life / h.max, 0, 1);
+      h.sprite.position.x += Math.sin((h.max - h.life) * 6 + h.vy) * 0.08 * dt;
+      const k = clamp(h.life / h.max, 0, 1);
+      h.sprite.material.opacity = k;
+      const s = (h.baseScale || h.sprite.scale.x) * (0.85 + 0.25 * Math.sin((h.max - h.life) * 8));
+      h.sprite.scale.setScalar(s);
+      h.sprite.material.rotation += dt * 0.6;
       if (h.life <= 0) { world.interior.remove(h.sprite); return false; }
       return true;
     });
@@ -547,6 +565,11 @@ export function createGame(world, gltf) {
     updateBubbles(bubbles, state.t, dt);
     updateSnow(snow, dt);
     updateHearts(dt);
+    if (state.bursts) {
+      const keep = updateFeedBursts(state.bursts, dt);
+      state.bursts.filter((b) => !keep.includes(b)).forEach((b) => world.interior.remove(b));
+      state.bursts = keep;
+    }
     if (decorMeshes.jelly) updateJellies(decorMeshes.jelly, state.t);
     if (canBond() && Math.sin(state.t * 2) > 0.7 && Math.random() < 0.02) {
       const a = sharks[0], b = sharks[1];
@@ -645,5 +668,5 @@ export function createGame(world, gltf) {
   bindUI();
   setDayNight(world, state.nightT);
 
-  return { state, sharks, tick, save, audio, fish };
+  return { state, sharks, tick, save, audio, fish, burstHearts, dropFoodAt };
 }
