@@ -19,10 +19,12 @@ Aşk Akvaryumu cinematic 3D sürümü. Tüm 3B modeller ve dokular yerelde sunul
 
 ## Balıklar
 
-- Clownfish model and swim loop from [Gaitkit Tropical Fish](https://gaitkit.com/)
+- Reef fish (blue tang, tang, butterflyfish, Moorish idol, parrotfish,
+  cardinalfish, mandarinfish, zebra clownfish) from
+  [Quaternius' Animated Fish Bundle](https://poly.pizza/bundle/Animated-Fish-Bundle-44zhHN1UbT)
+  on Poly Pizza. License: **CC0 1.0**.
+- Orange clownfish and swim loop from [Gaitkit Tropical Fish](https://gaitkit.com/asset/tropical-fish)
   (commercial use allowed; credit given with thanks).
-- Blue tang, yellow tang, butterflyfish, angelfish and cardinal tetra schools
-  are original procedural models inspired by those species.
 
 ## Oda, dokular ve HDRI
 

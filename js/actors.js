@@ -51,7 +51,20 @@ export async function preloadActors(manager) {
   const jobs = [];
   jobs.push(load("./models/sharks/blacktip.glb").then((g) => { CACHE.sharks.blacktip = g; }));
   jobs.push(load("./models/sharks/whitetip.glb").then((g) => { CACHE.sharks.whitetip = g; }));
-  jobs.push(load("./models/fish/tropical.glb").then((g) => { CACHE.fish.clown = g; }));
+  jobs.push(load("./models/fish/tropical.glb").then((g) => { CACHE.fish.gaitkitClown = g; }));
+  const REEF_FILES = {
+    bluetang: "./models/fish/reef/bluetang.glb",
+    tang: "./models/fish/reef/tang.glb",
+    butterfly: "./models/fish/reef/butterfly.glb",
+    moorish: "./models/fish/reef/moorish.glb",
+    parrot: "./models/fish/reef/parrot.glb",
+    cardinal: "./models/fish/reef/cardinal.glb",
+    mandarin: "./models/fish/reef/mandarin.glb",
+    clown: "./models/fish/reef/clown.glb",
+  };
+  for (const [k, url] of Object.entries(REEF_FILES)) {
+    jobs.push(load(url).then((g) => { CACHE.fish[k] = g; }));
+  }
   for (const [k, url] of Object.entries(CORAL_FILES)) {
     jobs.push(load(url).then((g) => { CACHE.coral[k] = g; }));
   }
@@ -536,86 +549,160 @@ function speciesGeo(spec) {
   return geo;
 }
 
+const REEF_SCHOOLS = [
+  { id: "bluetang",  len: 0.20, n: [6, 3], spread: 0.75, base: { cx: -0.95, cy: 0.95, cz: -0.10 } },
+  { id: "tang",      len: 0.17, n: [5, 3], spread: 0.70, base: { cx:  1.05, cy: 1.15, cz:  0.15 } },
+  { id: "butterfly", len: 0.14, n: [5, 3], spread: 0.65, base: { cx:  0.15, cy: 0.72, cz:  0.28 } },
+  { id: "moorish",   len: 0.16, n: [3, 2], spread: 0.55, base: { cx:  0.85, cy: 1.35, cz: -0.25 } },
+  { id: "parrot",    len: 0.22, n: [3, 2], spread: 0.60, base: { cx: -0.35, cy: 1.25, cz:  0.05 } },
+  { id: "cardinal",  len: 0.075,n: [14, 8],spread: 0.50, base: { cx: -0.20, cy: 1.05, cz:  0.22 } },
+  { id: "mandarin",  len: 0.10, n: [4, 2], spread: 0.45, base: { cx:  1.20, cy: 0.55, cz: -0.15 } },
+  { id: "clown",     len: 0.11, n: [4, 2], spread: 0.35, base: { cx: -1.15, cy: 0.48, cz:  0.18 } },
+];
+
+function pickSwimClip(gltf) {
+  const clips = gltf?.animations || [];
+  return (
+    clips.find((c) => /swimming_normal/i.test(c.name)) ||
+    clips.find((c) => /swimming/i.test(c.name)) ||
+    clips.find((c) => /swim|loop/i.test(c.name)) ||
+    clips[0] ||
+    null
+  );
+}
+
+function styleReefFish(root, uniforms, key) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    o.frustumCulled = false;
+    const src = o.material;
+    const list = Array.isArray(src) ? src : src ? [src] : [];
+    const out = list.map((m) => {
+      const mat = m.clone();
+      mat.roughness = Math.min(mat.roughness ?? 0.45, 0.45);
+      mat.metalness = Math.min(mat.metalness ?? 0.08, 0.12);
+      mat.envMapIntensity = 0.7;
+      if (mat.color && !/eye/i.test(mat.name || "")) {
+        mat.color.offsetHSL(0, 0.06, 0.06);
+      }
+      applyUnderwater(mat, uniforms, { key: "reef-" + key });
+      return mat;
+    });
+    o.material = Array.isArray(src) ? out : out[0];
+  });
+}
+
+function spawnReefFish(gltf, uniforms, length, key, phase) {
+  const cloned = skeletonClone(gltf.scene);
+  styleReefFish(cloned, uniforms, key);
+  const wrap = normalizeModel(cloned, length);
+  const mixer = new THREE.AnimationMixer(cloned);
+  const clip = pickSwimClip(gltf);
+  if (clip) {
+    const act = mixer.clipAction(clip);
+    act.play();
+    act.setLoop(THREE.LoopRepeat);
+    act.time = (phase || 0) * (clip.duration || 1);
+    act.setEffectiveTimeScale(0.9 + Math.random() * 0.4);
+  }
+  return { wrap, mixer };
+}
+
 export function createFishSchool(quality, uniforms) {
   const group = new THREE.Group();
   const schools = [];
-  const counts = quality.mobile
-    ? { tang: 3, yellowtang: 3, butterfly: 3, angel: 2, tetra: 10 }
-    : { tang: 6, yellowtang: 5, butterfly: 5, angel: 3, tetra: 18 };
+  const light = !!(quality.mobile || quality.software || quality.tex1k);
+  const hasReef = REEF_SCHOOLS.some((s) => CACHE.fish[s.id]);
 
-  const bases = {
-    tang:       { cx: -0.9, cy: 0.85, cz: -0.1 },
-    yellowtang: { cx: 1.0,  cy: 1.15, cz: 0.15 },
-    butterfly:  { cx: 0.2,  cy: 0.7,  cz: 0.25 },
-    angel:      { cx: 0.7,  cy: 1.35, cz: -0.2 },
-    tetra:      { cx: -0.3, cy: 1.05, cz: 0.2 },
-  };
-
-  for (const [name, n] of Object.entries(counts)) {
-    const spec = SPECIES[name];
-    const geo = speciesGeo(spec);
-    const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.38,
-      metalness: 0.08,
-      envMapIntensity: 0.55,
-    });
-    applyUnderwater(mat, uniforms, { key: "fish-" + name });
-    const inst = new THREE.InstancedMesh(geo, mat, n);
-    inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    inst.castShadow = true;
-    inst.frustumCulled = false;
-    group.add(inst);
-    const members = [];
-    const b = bases[name];
-    const spread = name === "tetra" ? 0.55 : 0.7;
-    for (let i = 0; i < n; i++) {
-      members.push({
-        x: b.cx + (Math.random() - 0.5) * spread,
-        y: b.cy + (Math.random() - 0.5) * 0.35,
-        z: b.cz + (Math.random() - 0.5) * 0.45,
-        vx: (Math.random() - 0.5) * 0.2,
-        vy: 0,
-        vz: (Math.random() - 0.5) * 0.2,
-        phase: Math.random() * 6.28,
-        scale: 0.85 + Math.random() * 0.3,
-      });
+  if (hasReef) {
+    for (const spec of REEF_SCHOOLS) {
+      const gltf = CACHE.fish[spec.id];
+      if (!gltf?.scene) continue;
+      const n = light ? spec.n[1] : spec.n[0];
+      const members = [];
+      for (let i = 0; i < n; i++) {
+        const scale = 0.86 + Math.random() * 0.28;
+        const phase = Math.random() * 6.28;
+        const spawned = spawnReefFish(gltf, uniforms, spec.len * scale, spec.id, phase);
+        group.add(spawned.wrap);
+        members.push({
+          x: spec.base.cx + (Math.random() - 0.5) * spec.spread,
+          y: spec.base.cy + (Math.random() - 0.5) * 0.32,
+          z: spec.base.cz + (Math.random() - 0.5) * 0.42,
+          vx: (Math.random() - 0.5) * 0.18,
+          vy: 0,
+          vz: (Math.random() - 0.5) * 0.18,
+          phase,
+          scale,
+          object: spawned.wrap,
+          mixer: spawned.mixer,
+        });
+      }
+      schools.push({ inst: null, members, objects: true, id: spec.id });
     }
-    schools.push({ inst, members });
+  } else {
+    // procedural fallback if reef models fail to load
+    const counts = light
+      ? { tang: 3, yellowtang: 3, butterfly: 3, angel: 2, tetra: 10 }
+      : { tang: 6, yellowtang: 5, butterfly: 5, angel: 3, tetra: 18 };
+    const bases = {
+      tang: { cx: -0.9, cy: 0.85, cz: -0.1 },
+      yellowtang: { cx: 1.0, cy: 1.15, cz: 0.15 },
+      butterfly: { cx: 0.2, cy: 0.7, cz: 0.25 },
+      angel: { cx: 0.7, cy: 1.35, cz: -0.2 },
+      tetra: { cx: -0.3, cy: 1.05, cz: 0.2 },
+    };
+    for (const [name, n] of Object.entries(counts)) {
+      const spec = SPECIES[name];
+      const geo = speciesGeo(spec);
+      const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.38, metalness: 0.08, envMapIntensity: 0.55,
+      });
+      applyUnderwater(mat, uniforms, { key: "fish-" + name });
+      const inst = new THREE.InstancedMesh(geo, mat, n);
+      inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      inst.castShadow = true;
+      inst.frustumCulled = false;
+      group.add(inst);
+      const members = [];
+      const b = bases[name];
+      const spread = name === "tetra" ? 0.55 : 0.7;
+      for (let i = 0; i < n; i++) {
+        members.push({
+          x: b.cx + (Math.random() - 0.5) * spread,
+          y: b.cy + (Math.random() - 0.5) * 0.35,
+          z: b.cz + (Math.random() - 0.5) * 0.45,
+          vx: (Math.random() - 0.5) * 0.2, vy: 0, vz: (Math.random() - 0.5) * 0.2,
+          phase: Math.random() * 6.28, scale: 0.85 + Math.random() * 0.3,
+        });
+      }
+      schools.push({ inst, members });
+    }
   }
 
-  // Real clownfish models near the anemone
-  if (CACHE.fish.clown) {
-    const n = quality.mobile ? 2 : 4;
-    const objects = [];
+  // Orange Gaitkit clownfish near the anemone (distinct from the zebra clown)
+  if (CACHE.fish.gaitkitClown) {
+    const n = light ? 2 : 3;
     const members = [];
     for (let i = 0; i < n; i++) {
-      const cloned = CACHE.fish.clown.scene.clone(true);
-      cloned.traverse((o) => {
-        if (o.isMesh) {
-          o.castShadow = true;
-          o.frustumCulled = false;
-          if (o.material) {
-            o.material = o.material.clone();
-            applyUnderwater(o.material, uniforms, { key: "clown" });
-          }
-        }
-      });
+      const cloned = skeletonClone(CACHE.fish.gaitkitClown.scene);
+      styleReefFish(cloned, uniforms, "gaitkit-clown");
       const wrap = normalizeModel(cloned, 0.11 + i * 0.008);
       group.add(wrap);
       const mixer = new THREE.AnimationMixer(cloned);
-      const clip = CACHE.fish.clown.animations?.[0];
+      const clip = pickSwimClip(CACHE.fish.gaitkitClown);
       if (clip) {
         const act = mixer.clipAction(clip);
         act.play();
         act.setLoop(THREE.LoopRepeat);
         act.time = i * 0.4;
       }
-      objects.push({ wrap, mixer });
       members.push({
-        x: -1.15 + (Math.random() - 0.5) * 0.35,
-        y: 0.45 + Math.random() * 0.2,
-        z: 0.18 + (Math.random() - 0.5) * 0.2,
+        x: -1.15 + (Math.random() - 0.5) * 0.28,
+        y: 0.45 + Math.random() * 0.18,
+        z: 0.18 + (Math.random() - 0.5) * 0.18,
         vx: 0.05, vy: 0, vz: 0,
         phase: Math.random() * 6.28,
         scale: 1,
@@ -623,7 +710,7 @@ export function createFishSchool(quality, uniforms) {
         mixer,
       });
     }
-    schools.push({ inst: null, members, objects: true });
+    schools.push({ inst: null, members, objects: true, id: "gaitkit-clown" });
   }
 
   return { group, schools };
@@ -639,11 +726,22 @@ export function updateFish(schools, sharks, dt) {
     const n = school.members.length;
     cx /= n; cy /= n; cz /= n;
     school.members.forEach((f, i) => {
-      f.vx += (cx - f.x) * 0.5 * dt;
-      f.vy += (cy - f.y) * 0.5 * dt;
-      f.vz += (cz - f.z) * 0.5 * dt;
-      f.vx += Math.sin(now * 0.001 + f.phase) * 0.15 * dt;
+      f.vx += (cx - f.x) * 0.55 * dt;
+      f.vy += (cy - f.y) * 0.45 * dt;
+      f.vz += (cz - f.z) * 0.55 * dt;
+      f.vx += Math.sin(now * 0.001 + f.phase) * 0.16 * dt;
       f.vy += Math.cos(now * 0.0008 + f.phase) * 0.1 * dt;
+      // separation
+      for (const o of school.members) {
+        if (o === f) continue;
+        const sx = f.x - o.x, sy = f.y - o.y, sz = f.z - o.z;
+        const sd = Math.hypot(sx, sy, sz) || 0.001;
+        if (sd < 0.16) {
+          f.vx += (sx / sd) * 0.9 * dt;
+          f.vy += (sy / sd) * 0.9 * dt;
+          f.vz += (sz / sd) * 0.9 * dt;
+        }
+      }
       for (const s of sharks) {
         const dx = f.x - s.x, dy = f.y - s.y, dz = f.z - s.z;
         const d = Math.hypot(dx, dy, dz) || 0.001;
@@ -665,9 +763,15 @@ export function updateFish(schools, sharks, dt) {
       f.x += f.vx; f.y += f.vy; f.z += f.vz;
       if (f.object) {
         f.object.position.set(f.x, f.y, f.z);
-        f.object.lookAt(f.x + f.vx, f.y + f.vy, f.z + f.vz);
-        f.object.rotateY(Math.PI / 2);
-        if (f.mixer) f.mixer.update(dt);
+        const lookX = f.x + f.vx, lookY = f.y + f.vy, lookZ = f.z + f.vz;
+        if (Math.hypot(f.vx, f.vy, f.vz) > 0.01) {
+          f.object.lookAt(lookX, lookY, lookZ);
+          f.object.rotateY(Math.PI / 2);
+        }
+        if (f.mixer) {
+          f.mixer.timeScale = 0.8 + Math.min(sp, 0.55) * 1.4;
+          f.mixer.update(dt);
+        }
       } else if (school.inst) {
         dummy.position.set(f.x, f.y, f.z);
         dummy.lookAt(f.x + f.vx, f.y + f.vy, f.z + f.vz);

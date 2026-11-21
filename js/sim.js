@@ -645,5 +645,5 @@ export function createGame(world, gltf) {
   bindUI();
   setDayNight(world, state.nightT);
 
-  return { state, sharks, tick, save, audio };
+  return { state, sharks, tick, save, audio, fish };
 }

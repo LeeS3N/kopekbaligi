@@ -57,6 +57,7 @@ async function boot() {
   window.__world = world;
   window.__game = game;
   window.__quality = quality;
+  window.__fish = game.fish;
 
   // reveal UI
   document.getElementById("loader").classList.add("done");
