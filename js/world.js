@@ -401,8 +401,12 @@ export async function createWorld(canvas, quality, manager) {
     fragmentExtra: `
       float c2 = caustic(vWorldPos.xz * 1.12 + vec2(0.07, -0.04));
       float vein = smoothstep(0.12, 0.62, c2);
-      outgoingLight *= mix(vec3(0.68, 0.72, 0.66), vec3(1.18, 1.22, 1.12), vein);
-      outgoingLight += vec3(0.45, 0.75, 0.70) * pow(c2, 1.6) * 0.22;
+      outgoingLight *= mix(vec3(0.70, 0.68, 0.58), vec3(1.10, 1.08, 0.92), vein);
+      outgoingLight += vec3(0.50, 0.62, 0.42) * pow(c2, 1.6) * 0.16;
+      // front of the tank ( +z ) was blowing out under the hood
+      float front = smoothstep(0.05, 0.82, vWorldPos.z);
+      outgoingLight *= mix(vec3(1.0), vec3(0.62, 0.55, 0.42), front * 0.62);
+      outgoingLight = min(outgoingLight, vec3(0.82, 0.72, 0.52) * mix(1.15, 0.85, front));
     `,
   });
   root.add(sand);
@@ -1074,7 +1078,7 @@ function makeSand(tex, quality) {
     map: tex.sandDiff,
     normalMap: tex.sandNor,
     roughnessMap: tex.sandRough,
-    color: 0xb89660,
+    color: 0xa47a42,
     roughness: 0.88,
     metalness: 0.0,
     envMapIntensity: 0.25,
@@ -1365,9 +1369,9 @@ function makeLights(root, quality) {
   }
   root.add(sun);
 
-  const hood = new THREE.SpotLight(0xd8f0ff, 38, 8, Math.PI / 3.2, 0.5, 1.05);
-  hood.position.set(0, TANK.h + 0.05, 0.1);
-  hood.target.position.set(0, 0.2, 0);
+  const hood = new THREE.SpotLight(0xd8f0ff, 26, 8, Math.PI / 3.4, 0.62, 1.15);
+  hood.position.set(0, TANK.h + 0.05, -0.12);
+  hood.target.position.set(0, 0.42, -0.28);
   hood.castShadow = !!quality.shadows && !quality.mobile && !quality.software;
   root.add(hood);
   root.add(hood.target);
@@ -1384,8 +1388,8 @@ function makeLights(root, quality) {
   root.add(hood3);
   root.add(hood3.target);
 
-  const fill = new THREE.PointLight(0x7ec8d4, 2.6, 6, 1.5);
-  fill.position.set(0, 1.4, 0.2);
+  const fill = new THREE.PointLight(0x7ec8d4, 2.15, 6, 1.55);
+  fill.position.set(0, 1.5, -0.05);
   root.add(fill);
 
   const rect = new THREE.RectAreaLight(0xffd090, quality.software ? 0 : 5, TANK.w * 0.85, TANK.d * 0.55);
@@ -1438,11 +1442,11 @@ function makeGodRays(n) {
       }
       void main() {
         float x = vUv.x - 0.5;
-        float shaft = exp(-pow(x * 9.0, 2.0));
-        float bands = 0.55 + 0.45 * noise(vec2(vUv.x * 18.0, uTime * 0.15));
-        float flicker = 0.75 + 0.25 * sin(uTime * 1.3 + vUv.x * 20.0);
-        float fall = pow(1.0 - vUv.y, 1.15);
-        float a = shaft * bands * flicker * fall * mix(0.85, 0.32, uNight);
+        float shaft = exp(-pow(x * 6.6, 2.0));
+        float bands = 0.5 + 0.5 * noise(vec2(vUv.x * 16.0, uTime * 0.15));
+        float flicker = 0.78 + 0.22 * sin(uTime * 1.3 + vUv.x * 20.0);
+        float fall = pow(1.0 - vUv.y, 1.05);
+        float a = shaft * bands * flicker * fall * mix(1.15, 0.36, uNight);
         vec3 teal = vec3(0.28, 0.92, 0.82);
         vec3 warm = vec3(1.0, 0.78, 0.42);
         vec3 col = mix(teal, warm, smoothstep(0.7, 1.0, 1.0 - vUv.y) * 0.55);
@@ -1451,10 +1455,10 @@ function makeGodRays(n) {
     `,
   });
   for (let i = 0; i < n; i++) {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, TANK.water - 0.04), mat);
-    const x = -1.75 + (i / Math.max(1, n - 1)) * 3.5;
-    mesh.position.set(x, TANK.water / 2 + 0.02, (i % 2 === 0 ? 0.32 : 0.08));
-    mesh.rotation.y = (i % 2 === 0 ? 0.06 : -0.05);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.78, TANK.water - 0.02), mat);
+    const x = -1.85 + (i / Math.max(1, n - 1)) * 3.7;
+    mesh.position.set(x, TANK.water / 2 + 0.02, (i % 3 === 0 ? 0.42 : (i % 3 === 1 ? 0.18 : 0.02)));
+    mesh.rotation.y = (i % 2 === 0 ? 0.05 : -0.05);
     mesh.renderOrder = 1;
     group.add(mesh);
   }
@@ -1467,11 +1471,11 @@ export function setDayNight(world, nightT) {
   const q = world.quality || {};
   L.hemi.intensity = THREE.MathUtils.lerp(0.22, 0.08, nightT);
   if (L.sun) L.sun.intensity = THREE.MathUtils.lerp(1.15, 0.2, nightT);
-  L.hood.intensity = THREE.MathUtils.lerp(38, 16, nightT);
+  L.hood.intensity = THREE.MathUtils.lerp(26, 12, nightT);
   L.hood.color.set(nightT > 0.5 ? 0xa8c4ff : 0xd8f0ff);
   if (L.hood2) L.hood2.intensity = THREE.MathUtils.lerp(8, 4, nightT);
   if (L.hood3) L.hood3.intensity = THREE.MathUtils.lerp(8, 4, nightT);
-  L.fill.intensity = THREE.MathUtils.lerp(2.6, 1.2, nightT);
+  L.fill.intensity = THREE.MathUtils.lerp(2.15, 1.1, nightT);
   if (L.rect) L.rect.intensity = THREE.MathUtils.lerp(q.software ? 0 : 5, 2, nightT);
   if (L.spill) L.spill.intensity = THREE.MathUtils.lerp(22, 8, nightT);
   if (L.roomFill) L.roomFill.intensity = THREE.MathUtils.lerp(1.6, 0.7, nightT);

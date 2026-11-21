@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as skeletonClone } from "three/addons/utils/SkeletonUtils.js";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { TANK, tankBounds, applyUnderwater, dequantizeObject } from "./world.js";
 
 export const CACHE = {
@@ -238,8 +238,9 @@ const SHARK_MARKS = `
     float dTipW = smoothstep(0.70, 0.88, vLift) * smoothstep(0.26, 0.50, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong));
     float tailW = smoothstep(0.76, 0.92, vAlong) * smoothstep(0.12, 0.55, max(vLift, vSide));
     float tipF = clamp(max(tip, max(dTipW, tailW)), 0.0, 1.0);
-    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.22, 0.20, 0.16), collar * 0.8);
-    outgoingLight = mix(outgoingLight, vec3(0.97, 0.98, 0.95), tipF * 0.99);
+    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.18, 0.16, 0.13), collar * 0.85);
+    outgoingLight = mix(outgoingLight, vec3(0.98, 0.99, 0.96), tipF * 0.99);
+    outgoingLight += vec3(0.22, 0.22, 0.2) * tipF * 0.45;
   } else {
     outgoingLight = mix(outgoingLight, vec3(0.01, 0.01, 0.012), tip * 0.97);
   }
@@ -265,6 +266,9 @@ export function createSharkActor(spec, gltf, uniforms, length) {
         o.castShadow = true;
         o.receiveShadow = true;
         o.frustumCulled = false;
+        if (o.geometry) {
+          o.geometry = smoothGeometry(o.geometry.clone(), 0);
+        }
         const src = o.material;
         const mats = Array.isArray(src) ? src : [src];
         const upgraded = mats.map((m) => {
@@ -470,6 +474,275 @@ function ensureProjectedUv(geometry) {
   geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 }
 
+
+function weldByPosition(geometry, tolerance = 1e-4) {
+  const geo = geometry.clone();
+  const pos = geo.attributes.position;
+  if (!pos) return geo;
+  const idx = geo.index;
+  const count = idx ? idx.count : pos.count;
+  const getters = ["getX", "getY", "getZ", "getW"];
+  const setters = ["setX", "setY", "setZ", "setW"];
+  const names = Object.keys(geo.attributes);
+  const tmp = {};
+  for (const name of names) {
+    const attr = geo.attributes[name];
+    tmp[name] = new attr.constructor(new attr.array.constructor(Math.max(1, attr.count) * attr.itemSize), attr.itemSize, attr.normalized);
+  }
+  const hashTo = new Map();
+  const newIndex = [];
+  let next = 0;
+  const mul = 1 / Math.max(tolerance, 1e-7);
+  for (let i = 0; i < count; i++) {
+    const vi = idx ? idx.getX(i) : i;
+    const key = Math.round(pos.getX(vi) * mul) + "," + Math.round(pos.getY(vi) * mul) + "," + Math.round(pos.getZ(vi) * mul);
+    if (hashTo.has(key)) { newIndex.push(hashTo.get(key)); continue; }
+    for (const name of names) {
+      const attr = geo.attributes[name];
+      const out = tmp[name];
+      for (let k = 0; k < attr.itemSize; k++) out[setters[k]](next, attr[getters[k]](vi));
+    }
+    hashTo.set(key, next);
+    newIndex.push(next);
+    next++;
+  }
+  const result = new THREE.BufferGeometry();
+  for (const name of names) {
+    const src = tmp[name];
+    result.setAttribute(name, new src.constructor(src.array.slice(0, next * src.itemSize), src.itemSize, src.normalized));
+  }
+  result.setIndex(newIndex);
+  return result;
+}
+
+function midSkin(skinIndex, skinWeight, a, b) {
+  const map = new Map();
+  const add = (vi, scale) => {
+    if (!skinIndex || !skinWeight) return;
+    for (let k = 0; k < skinIndex.itemSize; k++) {
+      const id = skinIndex.getX ? (k === 0 ? skinIndex.getX(vi) : k === 1 ? skinIndex.getY(vi) : k === 2 ? skinIndex.getZ(vi) : skinIndex.getW(vi)) : 0;
+      const w = skinWeight.getX ? (k === 0 ? skinWeight.getX(vi) : k === 1 ? skinWeight.getY(vi) : k === 2 ? skinWeight.getZ(vi) : skinWeight.getW(vi)) * scale : 0;
+      if (w <= 1e-6) continue;
+      map.set(id, (map.get(id) || 0) + w);
+    }
+  };
+  add(a, 0.5); add(b, 0.5);
+  const bones = [...map.entries()].sort((p, q) => q[1] - p[1]).slice(0, 4);
+  const sum = bones.reduce((s, e) => s + e[1], 0) || 1;
+  const ids = [0, 0, 0, 0], ws = [0, 0, 0, 0];
+  bones.forEach((e, i) => { ids[i] = e[0]; ws[i] = e[1] / sum; });
+  return { ids, ws };
+}
+
+function subdivideOnce(geo) {
+  const src = geo.index ? geo : weldByPosition(geo);
+  const index = src.index.array;
+  const names = Object.keys(src.attributes);
+  const attrs = src.attributes;
+  const vertCount = attrs.position.count;
+  const getters = ["getX", "getY", "getZ", "getW"];
+  const setters = ["setX", "setY", "setZ", "setW"];
+  const extra = {};
+  for (const name of names) extra[name] = [];
+  const mid = new Map();
+  let next = vertCount;
+  const keyOf = (a, b) => (a < b ? a + "_" + b : b + "_" + a);
+  const hasSkin = !!(attrs.skinIndex && attrs.skinWeight);
+  function midpoint(a, b) {
+    const k = keyOf(a, b);
+    if (mid.has(k)) return mid.get(k);
+    const i = next++;
+    mid.set(k, i);
+    const skin = hasSkin ? midSkin(attrs.skinIndex, attrs.skinWeight, a, b) : null;
+    for (const name of names) {
+      const attr = attrs[name];
+      const arr = extra[name];
+      if (skin && /skinIndex/i.test(name)) { arr.push(...skin.ids.slice(0, attr.itemSize)); continue; }
+      if (skin && /skinWeight/i.test(name)) { arr.push(...skin.ws.slice(0, attr.itemSize)); continue; }
+      if (name === "normal") { arr.push(0, 0, 1); continue; }
+      for (let c = 0; c < attr.itemSize; c++) {
+        arr.push((attr[getters[c]](a) + attr[getters[c]](b)) * 0.5);
+      }
+    }
+    return i;
+  }
+  const newIndex = [];
+  for (let t = 0; t < index.length; t += 3) {
+    const a = index[t], b = index[t + 1], c = index[t + 2];
+    const ab = midpoint(a, b), bc = midpoint(b, c), ca = midpoint(c, a);
+    newIndex.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+  }
+  const result = new THREE.BufferGeometry();
+  for (const name of names) {
+    const attr = attrs[name];
+    const added = extra[name];
+    const Ctor = attr.array.constructor;
+    const merged = new Ctor((vertCount + added.length / attr.itemSize) * attr.itemSize);
+    merged.set(attr.array);
+    if (added.length) merged.set(added, attr.count * attr.itemSize);
+    result.setAttribute(name, new attr.constructor(merged, attr.itemSize, attr.normalized));
+  }
+  result.setIndex(newIndex);
+  return result;
+}
+
+function smoothGeometry(geometry, subdiv = 0) {
+  if (!geometry?.attributes?.position) return geometry;
+  let g = weldByPosition(geometry, 1e-4);
+  for (let i = 0; i < subdiv; i++) {
+    g = subdivideOnce(g);
+    g = weldByPosition(g, 1e-4);
+  }
+  g.computeVertexNormals();
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
+
+function displaceOrganic(geo, amount = 0.02) {
+  if (!geo.attributes.normal) geo.computeVertexNormals();
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const n = Math.sin(x * 12.1 + y * 7.3) * Math.cos(z * 9.7 + y * 5.1);
+    const n2 = Math.sin(x * 23.0 + z * 17.0 + y * 11.0);
+    const t = (n * 0.65 + n2 * 0.35) * amount;
+    pos.setXYZ(i, x + nrm.getX(i) * t, y + nrm.getY(i) * t, z + nrm.getZ(i) * t);
+  }
+  geo.computeVertexNormals();
+}
+
+let SPONGE_DATA = null;
+function spongeDataTexture() {
+  if (SPONGE_DATA) return SPONGE_DATA;
+  const w = 128;
+  const data = new Uint8Array(w * w * 4);
+  for (let y = 0; y < w; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = Math.sin(x * 0.37) * Math.cos(y * 0.29) + Math.sin((x + y) * 0.17);
+      const pore = Math.sin(x * 0.91) * Math.sin(y * 0.85);
+      const v = 96 + n * 22 - (pore > 0.5 ? 36 : 0);
+      const i = (y * w + x) * 4;
+      data[i] = Math.max(40, Math.min(200, v + 22));
+      data[i + 1] = Math.max(30, Math.min(180, v - 8));
+      data[i + 2] = Math.max(20, Math.min(140, v - 28));
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, w, w);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2.4, 2.4);
+  tex.needsUpdate = true;
+  SPONGE_DATA = tex;
+  return tex;
+}
+
+function coralSurfaceTex(kind) {
+  const w = 128;
+  const data = new Uint8Array(w * w * 4);
+  for (let y = 0; y < w; y++) {
+    for (let x = 0; x < w; x++) {
+      const ridge = Math.sin(x * 0.55) * Math.sin(y * 0.8);
+      const fine = Math.sin(x * 1.7 + y * 1.1) * 0.5;
+      const v = kind === "plate" ? 140 + ridge * 28 + fine * 14 : 120 + ridge * 22;
+      const i = (y * w + x) * 4;
+      data[i] = Math.max(50, v + 16);
+      data[i + 1] = Math.max(40, v - 10);
+      data[i + 2] = Math.max(30, v - 36);
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, w, w);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 3);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeOrganicSponge(size, uniforms, kind) {
+  let geo;
+  if (kind === "vase") {
+    const pts = [
+      new THREE.Vector2(0.02, 0.0), new THREE.Vector2(0.26, 0.02),
+      new THREE.Vector2(0.31, 0.14), new THREE.Vector2(0.24, 0.36),
+      new THREE.Vector2(0.29, 0.54), new THREE.Vector2(0.2, 0.66),
+      new THREE.Vector2(0.15, 0.62), new THREE.Vector2(0.17, 0.36),
+      new THREE.Vector2(0.1, 0.12), new THREE.Vector2(0.0, 0.08),
+    ];
+    geo = new THREE.LatheGeometry(pts, 32);
+  } else {
+    geo = new THREE.SphereGeometry(0.38, 32, 22);
+    geo.scale(1, 1.18, 1);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      if (pos.getY(i) > 0.28) pos.setY(i, pos.getY(i) * 0.72 + 0.06);
+    }
+  }
+  geo.computeVertexNormals();
+  displaceOrganic(geo, kind === "vase" ? 0.03 : 0.04);
+  ensureProjectedUv(geo);
+  const mat = new THREE.MeshStandardMaterial({
+    map: spongeDataTexture(),
+    color: kind === "vase" ? 0x7a4a2a : 0x8a5a2c,
+    roughness: 0.94,
+    metalness: 0,
+    envMapIntensity: 0.22,
+    flatShading: false,
+  });
+  applyUnderwater(mat, uniforms, { key: "proc-sponge-" + kind, uniforms: { uCauGain: { value: 0.7 } } });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const wrap = new THREE.Group();
+  wrap.add(mesh);
+  const box = new THREE.Box3().setFromObject(wrap);
+  const s = size / Math.max(box.getSize(new THREE.Vector3()).y, 0.001);
+  wrap.scale.setScalar(s);
+  return wrap;
+}
+
+function makePlateCoral(size, uniforms) {
+  const geo = new THREE.CylinderGeometry(0.55, 0.64, 0.16, 48, 8);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const ang = Math.atan2(z, x);
+    const r = Math.hypot(x, z);
+    if (y > 0) {
+      const ridge = Math.sin(ang * 16) * 0.035 * Math.min(1, r / 0.4) + Math.sin(r * 26) * 0.018;
+      pos.setY(i, y + ridge);
+      const wr = 1 + Math.sin(ang * 9 + r * 8) * 0.04;
+      pos.setX(i, x * wr); pos.setZ(i, z * wr);
+    } else {
+      pos.setY(i, y - 0.01 * Math.sin(r * 10));
+    }
+  }
+  geo.computeVertexNormals();
+  displaceOrganic(geo, 0.012);
+  ensureProjectedUv(geo);
+  const mat = new THREE.MeshStandardMaterial({
+    map: coralSurfaceTex("plate"),
+    color: 0xa87848,
+    roughness: 0.9,
+    metalness: 0,
+    envMapIntensity: 0.28,
+    flatShading: false,
+  });
+  applyUnderwater(mat, uniforms, { key: "proc-plate", uniforms: { uCauGain: { value: 0.85 } } });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const wrap = new THREE.Group();
+  wrap.add(mesh);
+  const box = new THREE.Box3().setFromObject(wrap);
+  const s = size / Math.max(box.getSize(new THREE.Vector3()).x, 0.001);
+  wrap.scale.setScalar(s);
+  return wrap;
+}
+
 function styleCoralMaterial(m, name, opts, quality) {
   const matName = (m.name || "").toLowerCase();
   const isRock = matName.includes("rock") || name === "boulders" || name === "rock_outcrop" || (name === "bommie" && !matName.includes("coral"));
@@ -529,10 +802,19 @@ function cloneCoral(name, targetSize, uniforms, opts = {}) {
     o.receiveShadow = true;
     const srcMat = o.material;
     const m = srcMat.clone();
-    if (o.geometry) ensureProjectedUv(o.geometry);
-    // attach geometry to material helper via a dummy
+    if (o.geometry) {
+      const rockish = /boulder|rock|bommie/i.test(name);
+      const dense = /finger|carnation|brain|staghorn|elkhorn/i.test(name);
+      let g = o.geometry.clone();
+      g = smoothGeometry(g, rockish ? 1 : 0);
+      if (!dense) displaceOrganic(g, rockish ? 0.008 : 0.014);
+      else displaceOrganic(g, 0.007);
+      ensureProjectedUv(g);
+      o.geometry = g;
+    }
     m.userData._geo = o.geometry;
     styleCoralMaterial(Object.assign(m, { geometry: o.geometry, name: srcMat?.name || m.name }), name, opts, opts.quality);
+    m.flatShading = false;
     const sway = opts.sway;
     applyUnderwater(m, uniforms, sway ? {
       key: "sway-" + name,
@@ -601,7 +883,11 @@ export function createReefScenery(quality, uniforms) {
   for (const item of layout) {
     const [name, size, x, z, rot, opts] = item;
     if (n < 1 && /elkhorn|pillar/.test(name)) continue;
-    const mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, {
+    let mesh;
+    if (name === "table") mesh = makePlateCoral(size * (0.9 + rng() * 0.2), uniforms);
+    else if (name === "barrel_sponge") mesh = makeOrganicSponge(size * (0.9 + rng() * 0.2), uniforms, "barrel");
+    else if (name === "vase_sponge") mesh = makeOrganicSponge(size * (0.9 + rng() * 0.2), uniforms, "vase");
+    else mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, {
       ...(opts || {}),
       phase: rng() * 6.28,
       quality,
@@ -629,7 +915,7 @@ export function createReefScenery(quality, uniforms) {
 
 function addPebbles(group, uniforms, quality, rng) {
   const tex = rockTextures();
-  const geo = new THREE.DodecahedronGeometry(0.04, 0);
+  const geo = smoothGeometry(new THREE.IcosahedronGeometry(0.045, 1), 0);
   ensureProjectedUv(geo);
   const mat = new THREE.MeshStandardMaterial({
     map: tex.diff,
@@ -784,7 +1070,20 @@ function pickSwimClip(gltf) {
   );
 }
 
+const FISH_IRID = {
+  bluetang: "vec3(0.25, 0.75, 1.15)",
+  tang: "vec3(0.95, 0.85, 0.25)",
+  butterfly: "vec3(1.0, 0.85, 0.35)",
+  moorish: "vec3(0.95, 0.95, 0.7)",
+  parrot: "vec3(0.4, 1.0, 0.55)",
+  cardinal: "vec3(1.0, 0.35, 0.3)",
+  mandarin: "vec3(0.4, 0.7, 1.1)",
+  clown: "vec3(1.0, 0.55, 0.15)",
+  "gaitkit-clown": "vec3(1.0, 0.5, 0.12)",
+};
+
 function styleReefFish(root, uniforms, key) {
+  const irid = FISH_IRID[key] || "vec3(0.55, 0.85, 0.95)";
   root.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = true;
@@ -792,15 +1091,61 @@ function styleReefFish(root, uniforms, key) {
     o.frustumCulled = false;
     const src = o.material;
     const list = Array.isArray(src) ? src : src ? [src] : [];
+    const allEyes = list.length && list.every((m) => /eye/i.test(m?.name || o.name || ""));
+    if (o.geometry) {
+      o.geometry = smoothGeometry(o.geometry.clone(), allEyes ? 0 : 1);
+    }
+    if (allEyes && o.geometry) {
+      o.geometry.computeBoundingBox();
+      const c = o.geometry.boundingBox.getCenter(new THREE.Vector3());
+      o.geometry.translate(-c.x, -c.y, -c.z);
+      o.geometry.scale(0.68, 0.68, 0.68);
+      o.geometry.translate(c.x, c.y, c.z);
+      o.geometry.computeVertexNormals();
+    }
     const out = list.map((m) => {
       const mat = m.clone();
-      mat.roughness = Math.min(mat.roughness ?? 0.45, 0.45);
-      mat.metalness = Math.min(mat.metalness ?? 0.08, 0.12);
-      mat.envMapIntensity = 0.7;
-      if (mat.color && !/eye/i.test(mat.name || "")) {
-        mat.color.offsetHSL(0, 0.06, 0.06);
+      const isEye = /eye/i.test(mat.name || o.name || "");
+      mat.flatShading = false;
+      mat.vertexColors = false;
+      if (isEye) {
+        mat.color.set(0x0b0c10);
+        mat.roughness = 0.1;
+        mat.metalness = 0.28;
+        mat.envMapIntensity = 1.35;
+        applyUnderwater(mat, uniforms, {
+          key: "reef-eye-" + key,
+          uniforms: { uCauGain: { value: 0.15 } },
+          fragmentExtra: `
+            vec3 wN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+            vec3 V = normalize(cameraPosition - vWorldPos);
+            float spec = pow(clamp(dot(wN, normalize(V + normalize(vec3(0.25, 0.85, 0.4)))), 0.0, 1.0), 72.0);
+            float fres = pow(1.0 - abs(dot(wN, V)), 3.0);
+            outgoingLight = mix(outgoingLight, vec3(0.10, 0.08, 0.07), 0.2);
+            outgoingLight += vec3(0.95, 0.97, 1.0) * spec * 1.15;
+            outgoingLight += vec3(0.18, 0.22, 0.28) * fres * 0.45;
+          `,
+        });
+      } else {
+        mat.roughness = Math.min(mat.roughness ?? 0.42, 0.42);
+        mat.metalness = Math.min(mat.metalness ?? 0.06, 0.08);
+        mat.envMapIntensity = 0.85;
+        if (mat.color) mat.color.offsetHSL(0, 0.08, 0.04);
+        applyUnderwater(mat, uniforms, {
+          key: "reef-body-" + key,
+          uniforms: { uCauGain: { value: 0.55 } },
+          fragmentExtra: `
+            vec3 wN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
+            vec3 V = normalize(cameraPosition - vWorldPos);
+            float fres = pow(1.0 - abs(dot(wN, V)), 2.2);
+            float lift = clamp(wN.y * 0.5 + 0.5, 0.0, 1.0);
+            outgoingLight *= mix(vec3(1.14, 1.10, 0.92), vec3(1.0), lift);
+            outgoingLight += (${irid}) * fres * 0.42;
+            float scales = sin(vWorldPos.x * 62.0 + vWorldPos.y * 80.0) * sin(vWorldPos.z * 54.0);
+            outgoingLight *= 1.0 + scales * 0.045;
+          `,
+        });
       }
-      applyUnderwater(mat, uniforms, { key: "reef-" + key });
       return mat;
     });
     o.material = Array.isArray(src) ? out : out[0];
