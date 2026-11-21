@@ -181,18 +181,18 @@ function upgradeSharkMaterial(src, gender) {
     p.emissiveIntensity = 0.12;
     p.userData.role = "eye";
   } else if (isCream) {
-    p.color.set(gender === "f" ? 0xcbb39a : 0xc2c0b4);
-    p.roughness = 0.52;
+    p.color.set(gender === "f" ? 0xb89a7e : 0x9ea094);
+    p.roughness = 0.55;
     p.metalness = 0.03;
-    p.envMapIntensity = 0.4;
+    p.envMapIntensity = 0.32;
     p.userData.role = "belly";
   } else {
-    p.color.set(gender === "f" ? 0x6a4e38 : 0x3c403e);
-    p.roughness = 0.36;
-    p.metalness = 0.1;
-    p.envMapIntensity = 0.85;
-    p.emissive = new THREE.Color(gender === "f" ? 0x1a1208 : 0x0c1214);
-    p.emissiveIntensity = 0.03;
+    p.color.set(gender === "f" ? 0x4a382c : 0x2a2e2c);
+    p.roughness = 0.34;
+    p.metalness = 0.12;
+    p.envMapIntensity = 0.7;
+    p.emissive = new THREE.Color(gender === "f" ? 0x140e08 : 0x080c0e);
+    p.emissiveIntensity = 0.025;
     p.userData.role = "body";
   }
   return p;
@@ -220,21 +220,28 @@ const SWIM_VERT = `
 `;
 
 const SHARK_MARKS = `
-  float dorsal = smoothstep(0.55, 0.82, vLift);
-  vec3 bronze = mix(outgoingLight, outgoingLight * vec3(0.62, 0.58, 0.48), dorsal * 0.55);
-  outgoingLight = bronze;
-  float belly = 1.0 - smoothstep(0.35, 0.62, vLift);
-  outgoingLight = mix(outgoingLight, outgoingLight * vec3(1.18, 1.14, 1.08) + vec3(0.03, 0.03, 0.025), belly * 0.35);
-  float tailTip = smoothstep(0.88, 0.96, vAlong) * smoothstep(0.15, 0.55, max(vLift, vSide));
-  float dorsalTip = smoothstep(0.86, 0.96, vLift) * smoothstep(0.36, 0.52, vAlong) * (1.0 - smoothstep(0.68, 0.86, vAlong));
-  float pecTip = smoothstep(0.80, 0.94, vSide) * (1.0 - smoothstep(0.62, 0.85, vLift)) * smoothstep(0.22, 0.40, vAlong) * (1.0 - smoothstep(0.55, 0.75, vAlong));
-  float caudal = smoothstep(0.90, 0.97, vAlong);
+  float dorsal = smoothstep(0.48, 0.78, vLift);
+  outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.46, 0.44, 0.36), dorsal * 0.82);
+  outgoingLight = min(outgoingLight, mix(vec3(1.15), vec3(0.42, 0.40, 0.34), dorsal * 0.55));
+  float belly = 1.0 - smoothstep(0.32, 0.60, vLift);
+  outgoingLight = mix(outgoingLight, outgoingLight * vec3(1.10, 1.07, 1.02) + vec3(0.015, 0.014, 0.012), belly * 0.22);
+  float tailTip = smoothstep(0.80, 0.93, vAlong) * smoothstep(0.12, 0.50, max(vLift, vSide));
+  float dorsalTip = smoothstep(0.74, 0.90, vLift) * smoothstep(0.28, 0.48, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong));
+  float pecTip = smoothstep(0.68, 0.88, vSide) * (1.0 - smoothstep(0.58, 0.84, vLift)) * smoothstep(0.18, 0.38, vAlong) * (1.0 - smoothstep(0.52, 0.76, vAlong));
+  float caudal = smoothstep(0.82, 0.94, vAlong);
   float tip = clamp(max(max(tailTip, dorsalTip), max(pecTip, caudal)), 0.0, 1.0);
-  vec3 markCol = uMark > 0.5 ? vec3(0.95, 0.96, 0.93) : vec3(0.015, 0.015, 0.018);
-  outgoingLight = mix(outgoingLight, markCol, tip * 0.92);
-  // wet sheen
-  float shine = pow(clamp(dot(normalize(normal), vec3(0.15, 0.75, 0.64)), 0.0, 1.0), 28.0);
-  outgoingLight += vec3(0.55, 0.65, 0.68) * shine * 0.28;
+  float collar = clamp(max(max(
+    smoothstep(0.72, 0.82, vAlong) * (1.0 - smoothstep(0.86, 0.94, vAlong)) * smoothstep(0.12, 0.50, max(vLift, vSide)),
+    smoothstep(0.66, 0.76, vLift) * (1.0 - smoothstep(0.86, 0.95, vLift)) * smoothstep(0.28, 0.48, vAlong) * (1.0 - smoothstep(0.62, 0.84, vAlong))
+  ), smoothstep(0.58, 0.72, vSide) * (1.0 - smoothstep(0.80, 0.92, vSide)) * (1.0 - smoothstep(0.58, 0.84, vLift)) * smoothstep(0.18, 0.38, vAlong) * (1.0 - smoothstep(0.52, 0.76, vAlong))), 0.0, 1.0);
+  if (uMark > 0.5) {
+    outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.28, 0.24, 0.20), collar * 0.7);
+    outgoingLight = mix(outgoingLight, vec3(0.96, 0.97, 0.94), tip * 0.98);
+  } else {
+    outgoingLight = mix(outgoingLight, vec3(0.01, 0.01, 0.012), tip * 0.97);
+  }
+  float shine = pow(clamp(dot(normalize(normal), vec3(0.15, 0.75, 0.64)), 0.0, 1.0), 32.0);
+  outgoingLight += vec3(0.50, 0.58, 0.62) * shine * 0.22;
 `;
 
 export function createSharkActor(spec, gltf, uniforms, length) {
@@ -266,7 +273,7 @@ export function createSharkActor(spec, gltf, uniforms, length) {
               uPhase: swimU.uPhase,
               uBite: swimU.uBite,
               uMark: { value: spec.gender === "f" ? 1 : 0 },
-              uCauGain: { value: 0.42 },
+              uCauGain: { value: 0.26 },
             },
             vertexCommon: "attribute float aAlong; attribute float aLift; attribute float aSide; varying float vAlong; varying float vLift; varying float vSide; uniform float uAmp; uniform float uPhase; uniform float uTime; uniform float uBite;",
             fragmentCommon: "varying float vAlong; varying float vLift; varying float vSide; uniform float uMark;",
