@@ -7,17 +7,32 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Aşk Akvaryumu — Kaptan &amp; İnci</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307161f'/%3E%3Cpath d='M8 34c8-10 18-16 28-10 6 3 10 4 18 2-6 8-14 14-26 14-8 0-14-3-20-6z' fill='%2378b7c8'/%3E%3Cpath d='M14 36c6-4 16-6 22-1' stroke='%23d8f2f8' stroke-width='1.4' fill='none'/%3E%3Ccircle cx='46' cy='22' r='3' fill='%23ff9db4'/%3E%3C/svg%3E" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307161f'/%3E%3Cpath d='M8 34c8-10 18-16 28-10 6 3 10 4 18 2-6 8-14 14-26 14-8 0-14-3-20-6z' fill='%2378b7c8'/%3E%3Ccircle cx='46' cy='22' r='3' fill='%23ff9db4'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.min.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="app">
     <canvas id="tank" aria-label="Akvaryum"></canvas>
 
-    <header class="hud hud-top">
+    <div id="loader">
+      <div class="loader-card">
+        <p class="eyebrow">Aşk Akvaryumu</p>
+        <h2>Akvaryum hazırlanıyor</h2>
+        <div class="prog"><i id="progbar"></i></div>
+        <p id="progtext">Camlar siliniyor…</p>
+      </div>
+    </div>
+
+    <header class="hud hud-top hidden-until-ready">
       <div class="brand">
         <p class="eyebrow">Aşk Akvaryumu</p>
         <h1>
@@ -45,7 +60,7 @@
       </div>
     </header>
 
-    <section class="meters" id="meters">
+    <section class="meters hidden-until-ready" id="meters">
       <article class="card" data-shark="0">
         <header>
           <span class="who male" id="card-name-0">Kaptan</span>
@@ -72,9 +87,10 @@
       </article>
     </section>
 
-    <footer class="dock" id="dock">
+    <footer class="dock hidden-until-ready" id="dock">
       <p class="hint" id="hint">Akvaryuma dokun, mama bırak.</p>
       <div class="foods" id="foods"></div>
+      <p class="credits-line">Köpekbalığı: Mateus Schwaab, CC BY 4.0</p>
     </footer>
 
     <div class="toast" id="toast" hidden></div>
@@ -83,7 +99,7 @@
       <div class="intro-card">
         <p class="eyebrow">Hoş geldin</p>
         <h2>Aşk Akvaryumu</h2>
-        <p class="lead">Karı koca iki köpekbalığı, <em>Kaptan</em> ve <em>İnci</em>, evlerinin camında seni bekliyor. Onları besle, mutlu et, birlikte yüzmelerini izle.</p>
+        <p class="lead">Karı koca iki köpekbalığı, <em>Kaptan</em> ve <em>İnci</em>, camın arkasında seni bekliyor. Onları besle, mutlu et, birlikte yüzmelerini izle. Kamerayı sürükleyerek akvaryuma bakabilirsin.</p>
         <button type="button" class="cta" id="btn-enter">Akvaryuma Gir</button>
         <p class="fine">İsimlerini dilediğin gibi değiştirebilirsin. Her şey bu cihazda saklanır.</p>
       </div>
@@ -113,6 +129,6 @@
       </form>
     </div>
   </div>
-  <script src="game.js"></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

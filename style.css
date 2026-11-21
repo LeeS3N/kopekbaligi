@@ -293,3 +293,63 @@ button, input { font-family: inherit; }
   .card { padding: 7px 10px; }
   .brand .eyebrow { display: none; }
 }
+
+/* 3D overlay additions */
+#loader {
+  position: absolute; inset: 0; z-index: 20;
+  display: grid; place-items: center;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(40, 110, 140, 0.35), transparent 55%),
+    linear-gradient(180deg, #0a1c28 0%, #061018 100%);
+  transition: opacity .6s ease, visibility .6s;
+}
+#loader.done { opacity: 0; visibility: hidden; pointer-events: none; }
+.loader-card { text-align: center; width: min(420px, 86vw); }
+.loader-card h2 {
+  font-family: var(--serif);
+  font-size: 36px;
+  font-weight: 600;
+  margin: 8px 0 22px;
+}
+.prog {
+  height: 6px; border-radius: 99px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.prog i {
+  display: block; height: 100%; width: 0%;
+  background: linear-gradient(90deg, #7ec8d4, #e8c988);
+  transition: width .2s ease;
+}
+#progtext { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.hidden-until-ready { opacity: 0; pointer-events: none; }
+.hidden-until-ready.show { opacity: 1; pointer-events: auto; transition: opacity .5s ease; }
+
+.credits-line {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(232, 226, 214, 0.45);
+  text-shadow: 0 1px 6px #000;
+  margin-top: 2px;
+}
+.shark-label {
+  font-family: "Outfit", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(4, 12, 18, 0.48);
+  border: 1px solid rgba(200, 230, 245, 0.16);
+  color: #e8f2f6;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translate(-50%, -100%);
+}
+.shark-label.female { color: #f3b3c4; }
+.shark-label.male { color: #b8d4e8; }
+
+/* canvas is under UI, orbit controls need to receive pointer on canvas */
+#tank { touch-action: none; cursor: grab; }
+#tank:active { cursor: grabbing; }
