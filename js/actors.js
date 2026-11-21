@@ -406,6 +406,86 @@ export function createProceduralShark(gender, length, uniforms, swimU) {
   return group;
 }
 
+let ROCK_TEX = null;
+function rockTextures() {
+  if (ROCK_TEX) return ROCK_TEX;
+  const loader = new THREE.TextureLoader();
+  const load = (url, srgb, repeat) => {
+    const tex = loader.load(url);
+    if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeat, repeat);
+    tex.anisotropy = 4;
+    return tex;
+  };
+  ROCK_TEX = {
+    diff: load("./textures/rock_face_03_diff_1k.jpg", true, 1.6),
+    nor: load("./textures/rock_face_03_nor_gl_1k.jpg", false, 1.6),
+    rough: load("./textures/rock_face_03_rough_1k.jpg", false, 1.6),
+  };
+  return ROCK_TEX;
+}
+
+function ensureProjectedUv(geometry) {
+  if (geometry.attributes.uv) return;
+  const pos = geometry.attributes.position;
+  const nrm = geometry.attributes.normal;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const nx = Math.abs(nrm ? nrm.getX(i) : 0);
+    const ny = Math.abs(nrm ? nrm.getY(i) : 1);
+    const nz = Math.abs(nrm ? nrm.getZ(i) : 0);
+    if (ny >= nx && ny >= nz) { uv[i * 2] = x * 0.55; uv[i * 2 + 1] = z * 0.55; }
+    else if (nx >= nz) { uv[i * 2] = z * 0.55; uv[i * 2 + 1] = y * 0.55; }
+    else { uv[i * 2] = x * 0.55; uv[i * 2 + 1] = y * 0.55; }
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+}
+
+function styleCoralMaterial(m, name, opts, quality) {
+  const matName = (m.name || "").toLowerCase();
+  const isRock = matName.includes("rock") || name === "boulders" || name === "rock_outcrop" || (name === "bommie" && !matName.includes("coral"));
+  if (isRock) {
+    const tex = rockTextures();
+    if (m.geometry) ensureProjectedUv(m.geometry);
+    m.map = tex.diff;
+    if (!(quality && quality.software)) m.normalMap = tex.nor;
+    m.roughnessMap = tex.rough;
+    m.color.set(0x9a8a78);
+    m.roughness = 0.92;
+    m.metalness = 0.02;
+    m.envMapIntensity = 0.25;
+    return;
+  }
+  const NATURAL = {
+    brain: 0xc47a48,
+    mushroom: 0xb06a4a,
+    table: 0xd8b07a,
+    lettuce: 0x6a8a3a,
+    bubble: 0xd4a048,
+    staghorn: 0xc49668,
+    elkhorn: 0xd0ae80,
+    pillar: 0xc48a58,
+    finger: 0xb87a50,
+    seafan: 0xa85a42,
+    softbush: 0x8a6a38,
+    carnation: 0xc25038,
+    barrel_sponge: 0xa85a28,
+    vase_sponge: 0xb86838,
+    anemone: 0xd4a078,
+    anemone_carpet: 0xc49070,
+    clam: 0xc8b090,
+    starfish: 0xc45a2a,
+    featherduster: 0xc8b8a0,
+  };
+  if (opts && opts.tint) m.color?.multiply(new THREE.Color(opts.tint));
+  else if (NATURAL[name]) m.color?.set(NATURAL[name]);
+  if (matName.includes("pink")) m.color?.set(0xa85a48);
+  if (m.roughness !== undefined) m.roughness = Math.min(Math.max(m.roughness ?? 0.62, 0.45), 0.8);
+  m.envMapIntensity = 0.5;
+}
+
 function sitOnSand(obj, y = TANK.sand) {
   obj.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(obj);
@@ -422,9 +502,10 @@ function cloneCoral(name, targetSize, uniforms, opts = {}) {
     o.receiveShadow = true;
     const srcMat = o.material;
     const m = srcMat.clone();
-    if (opts.tint) m.color?.multiply(new THREE.Color(opts.tint));
-    if (m.roughness !== undefined) m.roughness = Math.min(m.roughness ?? 0.6, 0.62);
-    m.envMapIntensity = 0.55;
+    if (o.geometry) ensureProjectedUv(o.geometry);
+    // attach geometry to material helper via a dummy
+    m.userData._geo = o.geometry;
+    styleCoralMaterial(Object.assign(m, { geometry: o.geometry, name: srcMat?.name || m.name }), name, opts, opts.quality);
     const sway = opts.sway;
     applyUnderwater(m, uniforms, sway ? {
       key: "sway-" + name,
@@ -467,46 +548,86 @@ export function createReefScenery(quality, uniforms) {
     ["bommie", 0.7, -1.55, -0.15, 0.8],
     ["rock_outcrop", 0.85, 1.75, -0.55, -0.5],
     ["bommie", 0.55, 1.45, 0.05, 1.2],
-    ["brain", 0.42, -1.35, 0.35, 0.2, { tint: 0xffc4b0 }],
-    ["brain", 0.32, 1.15, -0.45, 1.1, { tint: 0xffd0c4 }],
-    ["mushroom", 0.34, -0.95, -0.58, 0.6, { tint: 0xf0a0c0 }],
+    ["brain", 0.42, -1.35, 0.35, 0.2],
+    ["brain", 0.32, 1.15, -0.45, 1.1],
+    ["mushroom", 0.34, -0.95, -0.58, 0.6],
     ["table", 0.55, 0.15, -0.62, 0.3],
-    ["lettuce", 0.3, 0.55, -0.5, 0.9, { tint: 0x90e0a0 }],
-    ["bubble", 0.28, -0.45, -0.55, 0.1, { tint: 0xffe8a0 }],
-    ["staghorn", 0.72, -1.9, -0.25, 0.5, { tint: 0xf2c4a0 }],
-    ["elkhorn", 0.7, 1.95, -0.3, -0.4, { tint: 0xf8d8a8 }],
+    ["lettuce", 0.3, 0.55, -0.5, 0.9],
+    ["bubble", 0.28, -0.45, -0.55, 0.1],
+    ["staghorn", 0.72, -1.9, -0.25, 0.5],
+    ["elkhorn", 0.7, 1.95, -0.3, -0.4],
     ["pillar", 0.7, -1.7, -0.6, 0.0],
     ["finger", 0.4, 0.85, -0.58, 0.7],
     ["seafan", 0.55, -1.15, -0.62, 0.9, { sway: true }],
-    ["seafan", 0.42, 1.25, -0.6, -0.8, { sway: true, tint: 0xff88aa }],
-    ["softbush", 0.38, -0.2, -0.58, 0.4, { sway: true, tint: 0xff6a8a }],
-    ["carnation", 0.32, 0.35, -0.48, 1.4, { sway: true, tint: 0xff4466 }],
+    ["seafan", 0.42, 1.25, -0.6, -0.8, { sway: true, tint: 0xc07050 }],
+    ["softbush", 0.38, -0.2, -0.58, 0.4, { sway: true }],
+    ["carnation", 0.32, 0.35, -0.48, 1.4, { sway: true }],
     ["barrel_sponge", 0.32, -0.7, 0.48, 0.3, { tint: 0xc45a2a }],
     ["vase_sponge", 0.26, 0.95, 0.42, 0.8, { tint: 0xd07040 }],
     ["clam", 0.28, -0.15, 0.5, 0.4],
     ["starfish", 0.16, 0.55, 0.52, 0.2],
     ["featherduster", 0.28, -1.05, 0.38, 0.6, { sway: true }],
-    ["anemone", 0.42, -1.25, 0.22, 0.3, { sway: true, tint: 0xff88aa }],
-    ["anemone", 0.34, 1.35, 0.28, -0.5, { sway: true, tint: 0xffc0d0 }],
+    ["anemone", 0.42, -1.25, 0.22, 0.3, { sway: true }],
+    ["anemone", 0.34, 1.35, 0.28, -0.5, { sway: true, tint: 0xe8c4a0 }],
     ["anemone_carpet", 0.5, -0.55, -0.4, 0.8, { sway: true }],
   ];
   for (const item of layout) {
     const [name, size, x, z, rot, opts] = item;
-    if (n < 1 && /featherduster|elkhorn|pillar|carnation|softbush|table/.test(name)) continue;
+    if (n < 1 && /elkhorn|pillar/.test(name)) continue;
     const mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, {
       ...(opts || {}),
       phase: rng() * 6.28,
+      quality,
     });
     place(group, mesh, x, z, rot);
   }
+  // extra mid-tank colonies and pebbles for a denser, less empty sand bed
+  const extras = [
+    ["finger", 0.28, -0.55, 0.22, 0.4],
+    ["lettuce", 0.22, 0.25, 0.32, 1.1],
+    ["mushroom", 0.22, 1.05, 0.18, 0.2],
+    ["brain", 0.24, -0.85, 0.15, 0.9],
+    ["starfish", 0.12, -0.4, 0.55, 1.3],
+  ];
+  for (const [name, size, x, z, rot] of extras) {
+    const mesh = cloneCoral(name, size * (0.9 + rng() * 0.2), uniforms, { phase: rng() * 6.28, quality });
+    place(group, mesh, x, z, rot);
+  }
+  addPebbles(group, uniforms, quality, rng);
   return group;
+}
+
+function addPebbles(group, uniforms, quality, rng) {
+  const tex = rockTextures();
+  const geo = new THREE.DodecahedronGeometry(0.04, 0);
+  ensureProjectedUv(geo);
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex.diff,
+    roughnessMap: tex.rough,
+    color: 0x8a7a68,
+    roughness: 0.92,
+    metalness: 0.02,
+  });
+  applyUnderwater(mat, uniforms, { key: "pebble" });
+  const n = quality.mobile ? 10 : 18;
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(geo, mat);
+    const s = 0.5 + rng() * 1.4;
+    m.scale.set(s, s * (0.5 + rng() * 0.5), s * (0.7 + rng() * 0.5));
+    m.position.set((rng() - 0.5) * 3.6, TANK.sand, (rng() - 0.5) * 1.2);
+    m.rotation.set(rng() * 1.5, rng() * 6.28, rng() * 1.5);
+    sitOnSand(m);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    group.add(m);
+  }
 }
 
 export function createKelp(quality, uniforms) {
   const group = new THREE.Group();
   const n = quality.kelp;
   const rng = mulberry(11);
-  if (CACHE.coral.kelp && !quality.software) {
+  if (CACHE.coral.kelp && !quality.software) { // real kelp on GPU
     const count = n;
     for (let i = 0; i < count; i++) {
       const side = i % 2 === 0 ? -1 : 1;
@@ -517,7 +638,8 @@ export function createKelp(quality, uniforms) {
     }
   } else {
     const blade = bladeGeo();
-    for (let i = 0; i < n; i++) {
+    const count = Math.max(n, quality.software ? 12 : n);
+    for (let i = 0; i < count; i++) {
       const side = i % 2 === 0 ? -1 : 1;
       const x = side * (0.9 + rng() * 1.15);
       const z = -TANK.d / 2 + 0.28 + rng() * (TANK.d * 0.45);

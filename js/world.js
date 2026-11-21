@@ -362,9 +362,9 @@ export async function createWorld(canvas, quality, manager) {
 
   const load = texLoader(manager);
   const tex = {
-    sandDiff: load(quality.tex1k ? "./textures/coast_sand_01_diff_1k.jpg" : "./textures/coast_sand_01_diff_2k.jpg", true, 3.2),
-    sandNor: load(quality.tex1k ? "./textures/coast_sand_01_nor_gl_1k.jpg" : "./textures/coast_sand_01_nor_gl_2k.jpg", false, 3.2),
-    sandRough: load("./textures/coast_sand_01_rough_1k.jpg", false, 3.2),
+    sandDiff: load(quality.tex1k ? "./textures/coast_sand_01_diff_1k.jpg" : "./textures/coast_sand_01_diff_2k.jpg", true, 5.0),
+    sandNor: load(quality.tex1k ? "./textures/coast_sand_01_nor_gl_1k.jpg" : "./textures/coast_sand_01_nor_gl_2k.jpg", false, 5.0),
+    sandRough: load("./textures/coast_sand_01_rough_1k.jpg", false, 5.0),
     rockDiff: load("./textures/rock_face_03_diff_1k.jpg", true, 1.4),
     rockNor: load("./textures/rock_face_03_nor_gl_1k.jpg", false, 1.4),
     rockRough: load("./textures/rock_face_03_rough_1k.jpg", false, 1.4),
@@ -959,7 +959,7 @@ function makeCabinet(tex) {
 }
 
 function makeSand(tex, quality) {
-  const segs = quality && (quality.software || quality.tex1k) ? 8 : 64;
+  const segs = quality && (quality.software || quality.tex1k) ? 16 : 64;
   const geo = new THREE.PlaneGeometry(TANK.w - 0.06, TANK.d - 0.06, segs, Math.max(4, (segs / 2) | 0));
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
